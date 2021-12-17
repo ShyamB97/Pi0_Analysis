@@ -7,7 +7,7 @@ Created on Fri Mar 26 12:09:56 2021
 """
 
 import numpy as np
-from Master import Vector3, ITEM, QUANTITIY, CutDict
+from Master import Vector3, ITEM, QUANTITY, CutDict
 import sys
 
 
@@ -40,7 +40,7 @@ def Angle(v_0 : Vector3, v_1 : Vector3):
     return np.arccos(cos_angle)
 
 
-def GetShowerPairValues(parameter, pairs, _type=list):
+def GetShowerPairValues(parameter, pairs, _type=list, unique=False, returnPaired=False):
     """
     Used to retrieve parameters of the shower pairs
     ----- Parameters -----
@@ -57,13 +57,25 @@ def GetShowerPairValues(parameter, pairs, _type=list):
         
         if _type is list:
             evt_paired_values = []
+            already_added = []
             for j in range(len(evt_pairs)):
                 values = [ evt[k] for k in evt_pairs[j]]
-                evt_paired_values.extend(values)
+                if unique == False:
+                    if returnPaired is True:
+                        evt_paired_values.append(values)
+                    else:
+                        evt_paired_values.extend(values)
+                if unique == True:
+                    for v in range(len(values)):
+                        if evt_pairs[j][v] not in already_added:
+                            already_added.append( evt_pairs[j][v] )
+                            evt_paired_values.append(values[v])
             paired_values.append(evt_paired_values)
         else:
             if len(pairs[i]) > 0:
                 paired_values.append(evt)
+            else:
+                paired_values.append(-999)
     
     return np.array(paired_values, dtype=object)
 
@@ -601,46 +613,94 @@ def GetAllShowerPairs(nHits):
     return all_pairs
 
 
-def CalculateQuantities(data_list : dict, allPairs : bool = False, param = None, conditional = None, cut = None):
-    
-    cnn_score = CNNScore(data_list[ITEM.CNN_EM], data_list[ITEM.CNN_TRACK]) # need to move this to ITEM dictionary
+def GetShowerPairPandoraTags(pandoraTag, pairs):
+    """
+    Used to retrieve parameters of the shower pairs
+    ----- Parameters -----
+    paired_values       : parameters only for the showers making a pair
+    evt                 : event level parameters
+    evt_pairs           : shower pairs per event
+    evt_paired values   : parameters of the showers forming pairs in the event
+    ----------------------
+    """
+    paired_values = []
+    for i in range(len(pandoraTag)):
+        evt = pandoraTag[i]
+        evt_pairs = pairs[i]
+        
+        evt_paired_values = []
+        for j in range(len(evt_pairs)):
+            values = [ evt[k] for k in evt_pairs[j]]
+            if -999 in values:
+                values = -999
+            if values == [13, 11]:
+                values.reverse()
+            evt_paired_values.append(np.mean(values)) # 11 -> [11, 11], 12 -> [11, 13]/[13, 11] 13-> [13, 13]
+        paired_values.append(evt_paired_values)
 
-    data_list.update({QUANTITIY.CNN_SCORE : cnn_score})
+    return np.array(paired_values, dtype=object)
 
-    data_list = CutDict(data_list, param, conditional, cut)
-    
-    # compute quantities
-    if allPairs is True:
-        shower_pairs = GetAllShowerPairs(data_list[ITEM.HITS])
-    else:
-        shower_pairs = GetShowerPairs_Hits(data_list[ITEM.HITS])
-    separation = ShowerPairSeparation(data_list[ITEM.START_POS], shower_pairs)
-    opening_angle = ShowerPairAngle(shower_pairs, data_list[ITEM.DIRECTION])
-    dist_vertex = GetDecayVertexDistance(separation, opening_angle)
-    decay_vertex = GetDecayVertex(shower_pairs, data_list[ITEM.START_POS], data_list[ITEM.DIRECTION], dist_vertex)
-    pair_energies, pair_leading, pair_second = ShowerPairEnergy(shower_pairs, data_list[ITEM.ENERGY])
-    # truth quantities
-    true_opening_angle = ShowerPairAngle(shower_pairs, data_list[ITEM.TRUE_MOMENTUM].Normalise())
-    pair_mc_energies, _, _ = ShowerPairEnergy(shower_pairs, data_list[ITEM.TRUE_ENERGY])
 
-    # create quantities dictionary
-    return {
-        ITEM.PANDORA_TAG                : data_list[ITEM.PANDORA_TAG],
-        QUANTITIY.CNN_SCORE             : data_list[QUANTITIY.CNN_SCORE],
-        ITEM.HITS                       : data_list[ITEM.HITS],
-        ITEM.SHOWER_LENGTH              : data_list[ITEM.SHOWER_LENGTH],
-        ITEM.SHOWER_ANGLE               : data_list[ITEM.SHOWER_ANGLE],
-        QUANTITIY.BEAM_ANGLE            : BeamTrackShowerAngle(data_list[ITEM.BEAM_START_POS], data_list[ITEM.BEAM_END_POS], data_list[ITEM.DIRECTION]),
-        QUANTITIY.MC_ANGLE              : DaughterRecoMCAngle(data_list[ITEM.TRUE_START_POS], data_list[ITEM.TRUE_END_POS], data_list[ITEM.DIRECTION]),
-        QUANTITIY.START_HITS            : GetShowerStartHits(data_list[ITEM.HIT_RADIAL], data_list[ITEM.HIT_LONGITUDINAL], [3, -1, 4]),
-        QUANTITIY.SHOWER_PAIRS          : shower_pairs,
-        QUANTITIY.SHOWER_SEPERATION     : separation,
-        QUANTITIY.OPENING_ANGLE         : opening_angle,
-        QUANTITIY.DIST_VERTEX           : dist_vertex,
-        QUANTITIY.DECAY_VERTEX          : decay_vertex,
-        QUANTITIY.LEADING_ENERGY        : pair_leading,
-        QUANTITIY.SECONDARY_ENERGY      : pair_second,
-        QUANTITIY.INVARIANT_MASS        : InvariantMass(opening_angle, pair_energies),
-        QUANTITIY.TRUE_OPENING_ANGLE    : true_opening_angle,
-        QUANTITIY.TRUE_INVARIANT_MASS   : InvariantMass(true_opening_angle, pair_mc_energies)
-    }
+def CalculateQuantities(data : dict = None, allPairs : bool = False, param = None, conditional = None, cut = None, empty : bool = False):
+    _dict = {
+        ITEM.PANDORA_TAG                   : None,
+        QUANTITY.CNN_SCORE                : None,
+        ITEM.HITS                          : None,
+        ITEM.SHOWER_LENGTH                 : None,
+        ITEM.SHOWER_ANGLE                  : None,
+        QUANTITY.BEAM_ANGLE               : None,
+        QUANTITY.MC_ANGLE                 : None,
+        QUANTITY.START_HITS               : None,
+        QUANTITY.SHOWER_PAIRS             : None,
+        QUANTITY.SHOWER_PAIR_PANDORA_TAGS : None,
+        QUANTITY.SHOWER_SEPERATION        : None,
+        QUANTITY.OPENING_ANGLE            : None,
+        QUANTITY.DIST_VERTEX              : None,
+        QUANTITY.DECAY_VERTEX             : None,
+        QUANTITY.LEADING_ENERGY           : None,
+        QUANTITY.SECONDARY_ENERGY         : None,
+        QUANTITY.INVARIANT_MASS           : None
+    } # create blank dictionary
+
+
+    if empty is False:
+        if data == None:
+            raise ValueError("You need to pass arguement data")
+        data = CutDict(data, param, conditional, cut)
+
+        # compute quantities
+        if allPairs is True:
+            shower_pairs = GetAllShowerPairs(data[ITEM.HITS])
+        else:
+            shower_pairs = GetShowerPairs_Hits(data[ITEM.HITS])
+        separation = ShowerPairSeparation(data[ITEM.START_POS], shower_pairs)
+        opening_angle = ShowerPairAngle(shower_pairs, data[ITEM.DIRECTION])
+        dist_vertex = GetDecayVertexDistance(separation, opening_angle)
+        decay_vertex = GetDecayVertex(shower_pairs, data[ITEM.START_POS], data[ITEM.DIRECTION], dist_vertex)
+        pair_energies, pair_leading, pair_second = ShowerPairEnergy(shower_pairs, data[ITEM.ENERGY])
+        # truth quantities
+        true_opening_angle = ShowerPairAngle(shower_pairs, data[ITEM.TRUE_MOMENTUM].Normalise())
+        pair_mc_energies, _, _ = ShowerPairEnergy(shower_pairs, data[ITEM.TRUE_ENERGY])
+
+        # create quantities dictionary
+        _dict.update({ITEM.PANDORA_TAG                   : data[ITEM.PANDORA_TAG]})
+        _dict.update({QUANTITY.CNN_SCORE                : data[QUANTITY.CNN_SCORE]})
+        _dict.update({ITEM.HITS                          : data[ITEM.HITS]})
+        _dict.update({ITEM.SHOWER_LENGTH                 : data[ITEM.SHOWER_LENGTH]})
+        _dict.update({ITEM.SHOWER_ANGLE                  : data[ITEM.SHOWER_ANGLE]})
+        _dict.update({QUANTITY.BEAM_ANGLE               : BeamTrackShowerAngle(data[ITEM.BEAM_START_POS], data[ITEM.BEAM_END_POS], data[ITEM.DIRECTION])})
+        _dict.update({QUANTITY.MC_ANGLE                 : DaughterRecoMCAngle(data[ITEM.TRUE_START_POS], data[ITEM.TRUE_END_POS], data[ITEM.DIRECTION])})
+        _dict.update({QUANTITY.START_HITS               : GetShowerStartHits(data[ITEM.HIT_RADIAL], data[ITEM.HIT_LONGITUDINAL], [3, -1, 4])})
+        _dict.update({QUANTITY.SHOWER_PAIRS             : shower_pairs})
+        _dict.update({QUANTITY.SHOWER_PAIR_PANDORA_TAGS : GetShowerPairPandoraTags(data[ITEM.PANDORA_TAG], shower_pairs)})
+        _dict.update({QUANTITY.SHOWER_SEPERATION        : separation})
+        _dict.update({QUANTITY.OPENING_ANGLE            : opening_angle})
+        _dict.update({QUANTITY.DIST_VERTEX              : dist_vertex})
+        _dict.update({QUANTITY.DECAY_VERTEX             : decay_vertex})
+        _dict.update({QUANTITY.LEADING_ENERGY           : pair_leading})
+        _dict.update({QUANTITY.SECONDARY_ENERGY         : pair_second})
+        _dict.update({QUANTITY.INVARIANT_MASS           : InvariantMass(opening_angle, pair_energies)})
+        _dict.update({QUANTITY.TRUE_OPENING_ANGLE       : true_opening_angle})
+        _dict.update({QUANTITY.TRUE_INVARIANT_MASS      : InvariantMass(true_opening_angle, pair_mc_energies)})
+        _dict = CutDict(_dict, param, conditional, cut) # cut quantities for shower preselection
+    return _dict

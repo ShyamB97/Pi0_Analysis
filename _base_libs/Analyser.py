@@ -10,8 +10,8 @@ import numpy as np
 import pandas as pd
 
 # custom imports
-from base_libs import Master
-from base_libs import SelectionQuantities
+import Master
+import SelectionQuantities
 
 
 def CalculateParameters(data, param=None, conditional=None, cut=None, cutData=False, beamData=False, cylinder=[3, -1, 4], pair_hits=True):

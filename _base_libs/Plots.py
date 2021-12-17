@@ -28,10 +28,11 @@ def Save(name="plot", subDirectory="", reference_filename=""):
     plt.close()
 
 
-def Plot(x, y, xlabel="", ylabel="", title="", label="", marker=""):
+def Plot(x, y, xlabel="", ylabel="", title="", label="", marker="", newFigure=True):
     """
     Plot line graph.
     """
+    if newFigure is True: plt.figure()
     plt.plot(x, y, marker=marker, label=label)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
@@ -69,19 +70,19 @@ def PlotHist2D(data_x, data_y, bins=100, x_range=[], y_range=[], xlabel="", ylab
         data_y = data_y[data_x >= x_range[0]] # clamp y before x
         data_x = data_x[data_x >= x_range[0]]
         
-        data_y = data_y[data_x < x_range[1]]
-        data_x = data_x[data_x < x_range[1]]
+        data_y = data_y[data_x <= x_range[1]]
+        data_x = data_x[data_x <= x_range[1]]
     
     # clamp data_x and data_y given the y range
     if len(y_range) == 2:
         data_x = data_x[data_y >= y_range[0]] # clamp x before y
         data_y = data_y[data_y >= y_range[0]]
         
-        data_x = data_x[data_y < y_range[1]]
-        data_y = data_y[data_y < y_range[1]]
+        data_x = data_x[data_y <= y_range[1]]
+        data_y = data_y[data_y <= y_range[1]]
 
     # plot data with a logarithmic color scale
-    plt.hist2d(data_x, data_y, 100, norm=matplotlib.colors.LogNorm(), label=label)
+    plt.hist2d(data_x, data_y, bins, norm=matplotlib.colors.LogNorm(), label=label)
     plt.colorbar()
 
     plt.xlabel(xlabel)
@@ -133,6 +134,86 @@ def PlotHistComparison(data_1, data_2, bins=100, xlabel="", title="", label_1=""
     plt.legend()
     plt.tight_layout()
     return height_1, height_2, edges
+
+
+def UniqueData(data):
+    """
+    formats data to be plotted as a bar plot based on unique values and how often they occur.
+    """
+    unique, counts = np.unique(data, return_counts=True)
+    counts = list(counts)
+    unique_labels = []
+    for i in range(len(unique)):
+        if str(unique[i]) != "[]":
+            unique_labels.append(str(unique[i]))
+        else:
+            counts.pop(i)
+    return unique_labels, counts
+
+
+def PlotBar(data, width=0.4, xlabel="", title="", label="", alpha=1, newFigure=True):
+    """
+    Will plot a bar graph or unique items in data.
+    """
+    if newFigure is True: plt.figure()
+
+    unique, counts = UniqueData(data)
+    plt.bar(unique, counts, width, label=label, alpha=alpha)
+    plt.ylabel("Counts")
+    plt.xlabel(xlabel)
+    plt.title(title)
+    if label != "": plt.legend()
+    plt.tight_layout()
+    return unique, counts
+
+def PlotBarComparision(data_1, data_2, width=0.4, xlabel="", title="", label_1="", label_2="", newFigure=True):
+    """
+    Plot two bar plots of the same data type side-by-side.
+    """
+    if newFigure is True: plt.figure()
+    
+    unique_1, counts_1 = UniqueData(data_1)
+    unique_2, counts_2 = UniqueData(data_2)
+
+    m = None
+    if(len(unique_2) > len(unique_1)):
+        m = unique_2
+        unique_2 = unique_1
+        unique_1 = unique_2
+
+        m = counts_2
+        counts_2 = counts_1
+        counts_1 = counts_2
+
+    #for i in range(len(unique_2)):
+    #    if unique_2[i] not in unique_1:
+    #        unique_1.append(unique_2[i]) 
+
+    #unique_1.sort()
+
+    missing = [i for i in unique_2 if i not in unique_1]
+    loc = [unique_2.index(i) for i in missing]
+    for i in loc:
+        counts_1.insert(i, 0)
+        unique_1.insert(i, unique_2[i] )
+
+    missing = [i for i in unique_1 if i not in unique_2]
+    loc = [unique_1.index(i) for i in missing]
+    for i in loc:
+        counts_2.insert(i, 0)
+
+
+    x = np.arange(len(unique_1))
+
+    plt.bar(x - (width/2), counts_1, width, label = label_1)
+    plt.bar(x + (width/2), counts_2, width, label = label_2)
+    plt.xticks(x, unique_1)
+    plt.xlabel(xlabel)
+    plt.ylabel("Counts")
+    plt.title(title)
+    plt.legend()
+    plt.tight_layout()
+    return [unique_1, counts_1], [unique_2, counts_2]
 
 
 def BW(x, A, M, T):

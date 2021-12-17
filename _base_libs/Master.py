@@ -5,7 +5,6 @@ Created on Thu Feb 25 13:50:53 2021
 @author: sb16165
 """
 
-from sys import setdlopenflags
 import uproot
 import numpy as np
 from enum import Enum
@@ -87,17 +86,18 @@ feature_values_single_shower = {
 feature_values_pairs = {
     0  : "average CNN score",
     1  : "collection plane hits of shower pairs",
-    2  : "pair seperation (cm)",
-    3  : "opening angle (rad)",
-    4  : "pair energy difference (GeV)",
-    5  : "decay vertex tangential distance (cm)",
-    6  : "decay vertex x position (cm)",
-    7  : "decay vertex y position (cm)",
-    8  : "decay vertex z position (cm)",
-    9  : "invariant mass (GeV)",
-    10 : "total true energy (GeV)",
-    11 : "true opening angle (rad)",
-    12 : "true invariant mass (GeV)"
+    2  : "average pandora tag",
+    3  : "pair seperation (cm)",
+    4  : "opening angle (rad)",
+    5  : "pair energy difference (GeV)",
+    6  : "decay vertex tangential distance (cm)",
+    7  : "decay vertex x position (cm)",
+    8  : "decay vertex y position (cm)",
+    9  : "decay vertex z position (cm)",
+    10 : "invariant mass (GeV)",
+    11 : "total true energy (GeV)",
+    12 : "true opening angle (rad)",
+    13 : "true invariant mass (GeV)"
 }
 
 def ParseCommandLine(args):
@@ -655,7 +655,7 @@ class ITEM(Enum):
 
 
 
-class QUANTITIY(Enum):
+class QUANTITY(Enum):
     """
     Values needed to be calculated using ITEM.
     """
@@ -664,16 +664,28 @@ class QUANTITIY(Enum):
     MC_ANGLE = 2 # angle of shower wrt to true particle that produced the shower
     START_HITS = 3 # hits close to start of shower
     SHOWER_PAIRS = 4 # shower pairs 
-    SHOWER_SEPERATION = 5 # distance between shower pair start positions
-    OPENING_ANGLE = 6 # angle between shower pairs
-    DIST_VERTEX = 7 # estimated distance to Pi0 decay vertex
-    DECAY_VERTEX = 8 # estimated Pi0 point of decay
-    LEADING_ENERGY = 9 # largest shower energy in a pair
-    SECONDARY_ENERGY = 10 # smallest shower energy in a pair
-    INVARIANT_MASS = 11 # shower pair invariant mass
+    SHOWER_PAIR_PANDORA_TAGS = 5 # pandora tag of both showers in a pair
+    SHOWER_SEPERATION = 6 # distance between shower pair start positions
+    OPENING_ANGLE = 7 # angle between shower pairs
+    DIST_VERTEX = 8 # estimated distance to Pi0 decay vertex
+    DECAY_VERTEX = 9 # estimated Pi0 point of decay
+    LEADING_ENERGY = 10 # largest shower energy in a pair
+    SECONDARY_ENERGY = 11 # smallest shower energy in a pair
+    INVARIANT_MASS = 12 # shower pair invariant mass
     # truth quantities
-    TRUE_OPENING_ANGLE = 12
-    TRUE_INVARIANT_MASS = 13
+    TRUE_OPENING_ANGLE = 13
+    TRUE_INVARIANT_MASS = 14
+
+
+def BugFixCNN(cnn_score):
+    """
+    Fixed bugged CNN score from analyser
+    """
+    for i in range(len(cnn_score)):
+        for j in range(len(cnn_score[i])):
+            if cnn_score[i][j] != -999:
+                cnn_score[i][j] = 2 - cnn_score[i][j]
+    return cnn_score
 
 
 # create data dictionary
@@ -687,6 +699,7 @@ def DataList(filename : str, param : ITEM = None, conditional : Conditional = No
     ITEM.HITS             : data.nHits(),
     ITEM.CNN_EM           : data.cnn_em(),
     ITEM.CNN_TRACK        : data.cnn_track(),
+    QUANTITY.CNN_SCORE   : BugFixCNN(data.CNNScore()), # need to move enum to ITEM
     ITEM.PANDORA_TAG      : data.pandoraTag(),
     ITEM.BEAM_START_POS   : data.beam_start_pos(),
     ITEM.BEAM_END_POS     : data.beam_end_pos(),
@@ -707,28 +720,136 @@ def DataList(filename : str, param : ITEM = None, conditional : Conditional = No
     return CutDict(_dict, param, conditional, cut)
 
 
+def UpdateShowerPair(pair, pair_index, added_showers):
+    # shower pairs are the index of the shower in data
+    # so to match the data struture of signal/backgound, we need to redefine them
+    # the new indices of the showers will be their index in target i.e.
+    # the length of target itself at the time it is added (example below)
+    # showers = [0, 1, 2, 3] -> signals are 0 and 2
+    # shower pair = [0, 2]
+    # now filter so showers = [0, 1, 2, 3] -> [0, 2]
+    # update shower pair so [0, 2] -> [0, 1] because shower as index 2 in the old dataset is now at index 1
+    if pair_index == 0:
+        pair_new = [0, 1]
+        added_showers.extend(pair)
+    else:
+        pair_new = [-999, -999]
+        for k in range(2):
+            if pair[k] in added_showers:
+                pair_new[k] = added_showers.index(pair[k])
+            else:
+                pair_new[k] = len(added_showers)
+                added_showers.append(pair[k])
+    return pair_new
+
+
+def UpdateShowerPairs(shower_pairs):
+    """
+    Update index of shower pairs after cutting data
+    """
+    new_pairs = []
+    for i in range(len(shower_pairs)):
+        new_pairs_evt = []
+        added_showers = []
+        for j in range(len(shower_pairs[i])):
+            new_pairs_evt.append( UpdateShowerPair(shower_pairs[i][j], j, added_showers) )
+        new_pairs.append(new_pairs_evt)
+    return np.array(new_pairs, object)
+
+
 def CutDict(_dict : str, param = None, conditional : Conditional = None, cut = None):
+
+    def GetShowersInPairs(parameter, pairs, _type=list):
+        """
+        Used to retrieve values for the unique showers in the pairs
+        """
+        paired_values = []
+        for i in range(len(parameter)):
+            evt = parameter[i]
+            evt_pairs = pairs[i]
+            
+            if _type is list:
+                evt_paired_values = []
+                already_added = []
+                for j in range(len(evt_pairs)):
+                    values = [ evt[k] for k in evt_pairs[j]]
+                    for v in range(len(values)):
+                        if evt_pairs[j][v] not in already_added:
+                            already_added.append( evt_pairs[j][v] )
+                            evt_paired_values.append(values[v])
+                paired_values.append(evt_paired_values)
+            else:
+                if len(pairs[i]) > 0:
+                    paired_values.append(evt)
+        
+        return np.array(paired_values, dtype=object)
+
+    single_param = [ITEM.PANDORA_TAG, QUANTITY.CNN_SCORE, ITEM.HITS, ITEM.SHOWER_LENGTH, ITEM.SHOWER_ANGLE, QUANTITY.BEAM_ANGLE, QUANTITY.MC_ANGLE, QUANTITY.START_HITS] # single shower quantities in the quantities dataset
+    contains_shower_pairs = QUANTITY.SHOWER_PAIRS in _dict
+
     if ITEM.EVENT_ID in _dict:
         print("current number of events: " + str(len(Unwrap(_dict[ITEM.EVENT_ID]))))
+
     if ITEM.HITS in _dict:
         print("current number of showers: " + str(len(Unwrap(_dict[ITEM.HITS]))))
-    if QUANTITIY.SHOWER_SEPERATION in _dict:
-        print("current number of shower pairs: " + str(len(Unwrap(_dict[QUANTITIY.SHOWER_SEPERATION]))))
+
+    if contains_shower_pairs is True:
+        print("current number of shower pairs: " + str(len(Unwrap(_dict[QUANTITY.SHOWER_SEPERATION]))))
+
     if param != None or conditional != None or cut != None:
-        mask = SelectionMask()
-        mask.InitiliseMask(_dict[ITEM.HITS])
-        # replace with generic pre-selection later
-        mask.CutMask(_dict[param], cut, conditional)
-        for item in _dict:
-            if item in [ITEM.BEAM_START_POS, ITEM.BEAM_END_POS, ITEM.EVENT_ID, ITEM.RUN]:
-                evtLevel = True
+        for i in range(len(param)):
+            # check parameter to cut is actually in the dictionary of data
+            if param[i] not in _dict: continue
+
+            # check if data is in bound of cuts, if not then skip
+            if conditional == Conditional.GREATER:
+                if min(Unwrap(_dict[param[i]])) > cut: continue
+            if conditional == Conditional.LESS:
+                if max(Unwrap(_dict[param[i]])) < cut: continue
+            if conditional == Conditional.EQUAL:
+                if len(set(Unwrap(_dict[param[i]]))) == 1: continue
+            if conditional == Conditional.NOT_EQUAL:
+                if cut not in set(Unwrap(_dict[param[i]])): continue
+
+            print("Cutting: " + str(param[i]))
+            mask = SelectionMask()
+
+            # initialse mask depending on the structure of data to cut
+            if contains_shower_pairs is False:
+                mask.InitiliseMask(_dict[ITEM.HITS])
             else:
-                evtLevel = False            
-            _dict.update( {item : mask.Apply(_dict[item], evtLevel)} )
+                # dont cut on QUANTITY.SHOWER_PAIRS as the data type is a list, so when infering
+                # the shape of the mask, it will get the correct structure i.e. event[shower pair data]
+                # instead of: event[shower pair[data0, data1]]
+                mask.InitiliseMask(_dict[QUANTITY.SHOWER_SEPERATION])
+
+            mask.CutMask(_dict[param[i]], cut[i], conditional[i])
+            for item in _dict:
+                if item in [ITEM.BEAM_START_POS, ITEM.BEAM_END_POS, ITEM.EVENT_ID, ITEM.RUN]:
+                    evtLevel = True
+                else:
+                    evtLevel = False
+                if contains_shower_pairs:
+                    # assume we are cutting on quantities dataset
+                    if item in single_param or param[i] in single_param:
+                        continue # dont cut on single shower properties
+                    _dict.update( {item : mask.Apply(_dict[item], evtLevel)} )
+                else:
+                    _dict.update( {item : mask.Apply(_dict[item], evtLevel)} )
+            if contains_shower_pairs:
+                # handle single parameter data:
+                for single in single_param:
+                    _dict.update( {single : GetShowersInPairs(_dict[single], _dict[QUANTITY.SHOWER_PAIRS] ) } )
+                # update shower pair indices
+                _dict[QUANTITY.SHOWER_PAIRS] = UpdateShowerPairs(_dict[QUANTITY.SHOWER_PAIRS])
+
+
     if ITEM.EVENT_ID in _dict:
         print("remaining number of events: " + str(len(Unwrap(_dict[ITEM.EVENT_ID]))))
+
     if ITEM.HITS in _dict:
         print("remaining number of showers: " + str(len(Unwrap(_dict[ITEM.HITS]))))
-    if QUANTITIY.SHOWER_SEPERATION in _dict:
-        print("remaining number of shower pairs: " + str(len(Unwrap(_dict[QUANTITIY.SHOWER_SEPERATION]))))
+
+    if QUANTITY.SHOWER_SEPERATION in _dict:
+        print("remaining number of shower pairs: " + str(len(Unwrap(_dict[QUANTITY.SHOWER_SEPERATION]))))
     return _dict

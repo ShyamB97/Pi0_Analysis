@@ -1,5 +1,5 @@
 import Master
-from Master import ITEM, QUANTITIY
+from Master import ITEM, QUANTITY
 import SelectionQuantities
 import Plots
 
@@ -105,7 +105,7 @@ for q in quantities:
         Plots.PlotHist( quantity[quantity != -999], bins=25, xlabel=q.name)
 
 plt.figure()
-inv_mass = quantities[QUANTITIY.INVARIANT_MASS]
+inv_mass = quantities[QUANTITY.INVARIANT_MASS]
 inv_mass_new = []
 for i in range(len(inv_mass)):
     if len(inv_mass[i]) == 0:
@@ -123,5 +123,5 @@ candidates = candidates[inv_mass > 0]
 inv_mass = inv_mass[inv_mass > 0]
 #run = run[inv_mass < 1]
 inv_mass = inv_mass[inv_mass < 1]
-Plots.PlotHist(inv_mass, bins=25, xlabel=QUANTITIY.INVARIANT_MASS)
+Plots.PlotHist(inv_mass, bins=25, xlabel=QUANTITY.INVARIANT_MASS)
 plt.show()

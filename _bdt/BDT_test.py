@@ -6,13 +6,11 @@ Created on Mon Jul 19 16:58:42 2021
 @author: sb16165
 """
 
+# TODO rework this and BDT_regressor.py alongside BDT_libs
 import pandas as pd
-import matplotlib.pyplot as plt
 from xgboost import training
-from xgboost.training import train
-import xgboost as xgb
 import BDT_regressor
-import base_libs.Plots
+import _base_libs.Plots
 
 
 def ApplyEventSelection(prediction, test):
@@ -45,8 +43,8 @@ def ApplyEventSelection(prediction, test):
 #test = pd.read_csv("BDT_input/Prod4a_1GeV_BeamSim_00_allshower.csv")
 
 
-#test = pd.read_csv("BDT_input/features_new/pi0_0p5GeV_hits.txt")
-#training = pd.read_csv("BDT_input/diphoton_truth_hits.txt")
+test = pd.read_csv("BDT_input/features_new/pi0_0p5GeV_hits.txt")
+training = pd.read_csv("BDT_input/diphoton_truth_hits.txt")
 #test = pd.read_csv("BDT_input/pi0_0p5GeV_hits.txt")
 
 #del training["Unnamed: 0"]
