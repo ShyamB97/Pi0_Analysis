@@ -743,7 +743,7 @@ def UpdateShowerPair(pair, pair_index, added_showers):
     return pair_new
 
 
-def UpdateShowerPairs(shower_pairs):
+def UpdateShowerPairIndex(shower_pairs):
     """
     Update index of shower pairs after cutting data
     """
@@ -757,7 +757,7 @@ def UpdateShowerPairs(shower_pairs):
     return np.array(new_pairs, object)
 
 
-def CutDict(_dict : str, param = None, conditional : Conditional = None, cut = None):
+def CutDict(_dict : str, param=None, conditional : Conditional=None, cut=None, custom_mask : SelectionMask=None):
 
     def GetShowersInPairs(parameter, pairs, _type=list):
         """
@@ -784,22 +784,37 @@ def CutDict(_dict : str, param = None, conditional : Conditional = None, cut = N
         
         return np.array(paired_values, dtype=object)
 
-    single_param = [ITEM.PANDORA_TAG, QUANTITY.CNN_SCORE, ITEM.HITS, ITEM.SHOWER_LENGTH, ITEM.SHOWER_ANGLE, QUANTITY.BEAM_ANGLE, QUANTITY.MC_ANGLE, QUANTITY.START_HITS] # single shower quantities in the quantities dataset
-    contains_shower_pairs = QUANTITY.SHOWER_PAIRS in _dict
+    if custom_mask == None:
+        if param != None or conditional != None or cut != None:
+            work = True
+        else:
+            work = False
+    else:
+        param = ["custom"] # placeholder to allow custom mask to be applied
+        work = True
 
-    if ITEM.EVENT_ID in _dict:
-        print("current number of events: " + str(len(Unwrap(_dict[ITEM.EVENT_ID]))))
+    if work is True:
+        single_param = [ITEM.PANDORA_TAG, QUANTITY.CNN_SCORE, ITEM.HITS, ITEM.SHOWER_LENGTH, ITEM.SHOWER_ANGLE, QUANTITY.BEAM_ANGLE, QUANTITY.MC_ANGLE, QUANTITY.START_HITS] # single shower quantities in the quantities dataset
+        contains_shower_pairs = QUANTITY.SHOWER_PAIRS in _dict
 
-    if ITEM.HITS in _dict:
-        print("current number of showers: " + str(len(Unwrap(_dict[ITEM.HITS]))))
+        if ITEM.EVENT_ID in _dict:
+            print("current number of events: " + str(len(Unwrap(_dict[ITEM.EVENT_ID]))))
 
-    if contains_shower_pairs is True:
-        print("current number of shower pairs: " + str(len(Unwrap(_dict[QUANTITY.SHOWER_SEPERATION]))))
+        if ITEM.HITS in _dict:
+            print("current number of showers: " + str(len(Unwrap(_dict[ITEM.HITS]))))
 
-    if param != None or conditional != None or cut != None:
+        if contains_shower_pairs is True:
+            print("current number of shower pairs: " + str(len(Unwrap(_dict[QUANTITY.SHOWER_SEPERATION]))))
+
         for i in range(len(param)):
             # check parameter to cut is actually in the dictionary of data
-            if param[i] not in _dict: continue
+            if param[i] not in _dict:
+                if param[i] != "custom": # check custom mask is not defined
+                    continue
+            # when cutting shower pair data, skip single shower cuts
+            if contains_shower_pairs is True and param[i] in single_param:
+                print("cut only shower pair properties")
+                continue
 
             # check if data is in bound of cuts, if not then skip
             if conditional == Conditional.GREATER:
@@ -812,18 +827,23 @@ def CutDict(_dict : str, param = None, conditional : Conditional = None, cut = N
                 if cut not in set(Unwrap(_dict[param[i]])): continue
 
             print("Cutting: " + str(param[i]))
-            mask = SelectionMask()
-
-            # initialse mask depending on the structure of data to cut
-            if contains_shower_pairs is False:
-                mask.InitiliseMask(_dict[ITEM.HITS])
+            
+            if custom_mask == None:
+                print("no mask, creating new")
+                mask = SelectionMask()
+                # initialse mask depending on the structure of data to cut
+                if contains_shower_pairs is False:
+                    mask.InitiliseMask(_dict[ITEM.HITS])
+                else:
+                    # dont cut on QUANTITY.SHOWER_PAIRS as the data type is a list, so when infering
+                    # the shape of the mask, it will get the correct structure i.e. event[shower pair data]
+                    # instead of: event[shower pair[data0, data1]]
+                    mask.InitiliseMask(_dict[QUANTITY.SHOWER_SEPERATION])
+                mask.CutMask(_dict[param[i]], cut[i], conditional[i]) 
             else:
-                # dont cut on QUANTITY.SHOWER_PAIRS as the data type is a list, so when infering
-                # the shape of the mask, it will get the correct structure i.e. event[shower pair data]
-                # instead of: event[shower pair[data0, data1]]
-                mask.InitiliseMask(_dict[QUANTITY.SHOWER_SEPERATION])
-
-            mask.CutMask(_dict[param[i]], cut[i], conditional[i])
+                print("using user defined mask")
+                mask = custom_mask
+            
             for item in _dict:
                 if item in [ITEM.BEAM_START_POS, ITEM.BEAM_END_POS, ITEM.EVENT_ID, ITEM.RUN]:
                     evtLevel = True
@@ -839,17 +859,19 @@ def CutDict(_dict : str, param = None, conditional : Conditional = None, cut = N
             if contains_shower_pairs:
                 # handle single parameter data:
                 for single in single_param:
-                    _dict.update( {single : GetShowersInPairs(_dict[single], _dict[QUANTITY.SHOWER_PAIRS] ) } )
+                    _dict.update( {single : GetShowersInPairs(_dict[single], _dict[QUANTITY.SHOWER_PAIRS])} )
                 # update shower pair indices
-                _dict[QUANTITY.SHOWER_PAIRS] = UpdateShowerPairs(_dict[QUANTITY.SHOWER_PAIRS])
+                print("updating shower pair indicies")
+                _dict[QUANTITY.SHOWER_PAIRS] = UpdateShowerPairIndex(_dict[QUANTITY.SHOWER_PAIRS])
 
+        if ITEM.EVENT_ID in _dict:
+            print("remaining number of events: " + str(len(Unwrap(_dict[ITEM.EVENT_ID]))))
 
-    if ITEM.EVENT_ID in _dict:
-        print("remaining number of events: " + str(len(Unwrap(_dict[ITEM.EVENT_ID]))))
+        if ITEM.HITS in _dict:
+            print("remaining number of showers: " + str(len(Unwrap(_dict[ITEM.HITS]))))
 
-    if ITEM.HITS in _dict:
-        print("remaining number of showers: " + str(len(Unwrap(_dict[ITEM.HITS]))))
-
-    if QUANTITY.SHOWER_SEPERATION in _dict:
-        print("remaining number of shower pairs: " + str(len(Unwrap(_dict[QUANTITY.SHOWER_SEPERATION]))))
+        if QUANTITY.SHOWER_SEPERATION in _dict:
+            print("remaining number of shower pairs: " + str(len(Unwrap(_dict[QUANTITY.SHOWER_SEPERATION]))))
+    else:
+        print("nothing to cut")    
     return _dict

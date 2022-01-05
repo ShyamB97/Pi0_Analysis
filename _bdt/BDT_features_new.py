@@ -58,19 +58,11 @@ def SortByEnergy(single, energy_index=11, beam=[15,16]):
                         single[k][i][j].reverse()
 
 
-filename="ROOTFiles/Prod4a_1GeV_BeamSim_00.root"
+filename="ROOTFiles/Prod4a_6GeV_BeamSim_00.root"
 data = DataList(filename)
-
-# !maybe use this
-selection = [
-    [QUANTITY.CNN_SCORE, QUANTITY.SHOWER_PAIR_PANDORA_TAGS],
-    [Conditional.GREATER, Conditional.NOT_EQUAL],
-    [0.5, 13]
-]
 
 quantities = CalculateQuantities(data, allPairs=True)
 pi0Signal = FindPi0Signal(quantities, data)
-
 
 single_parameters = [
         data[ITEM.START_POS].x,

@@ -80,7 +80,7 @@ def FindPi0Signal(quantities, truths):
     return signal
 
 
-def Filter(quantities : dict, signal : list, shower_pairs, update_shower_pairs : bool = True):
+def Filter(quantities : dict, signal : list, shower_pairs, update_shower_pairs : bool = True, _print : bool = False):
     """
     Filters signal from background based on mc truth signal.
     """
@@ -111,7 +111,7 @@ def Filter(quantities : dict, signal : list, shower_pairs, update_shower_pairs :
 
     # loop through each quantity
     for quantity in quantities:
-        print(quantity)
+        if _print is True : print(quantity)
         new_s = []
         new_b = []
         # loop through each event
@@ -371,3 +371,29 @@ def PlotShowerPairCorrelations(data : dict, quantities : dict, save: bool = Fals
         PlotHist2D(l, s, bins, x_range, y_range, "leading " + plotLabels[item], "secondary " + plotLabels[item])
         if save is True:
             Save(item.name + "_correlation", subDirectory)
+
+
+def AdvancedCNNScoreMask(cnn_score, shower_pairs, energy) -> SelectionMask:
+    """
+    Create more advanced selections on the CNN score.
+    """
+    mask = SelectionMask()
+    mask.InitiliseMask(cnn_score) # create mask based on the shape of data
+    for i in range(len(shower_pairs)):
+        for j in range(len(shower_pairs[i])):
+            # get leading and secondary shower energy
+            if energy[i][shower_pairs[i][j][0]] > energy[i][shower_pairs[i][j][1]]:
+                le_index = shower_pairs[i][j][0]
+                se_index = shower_pairs[i][j][1]
+            else:
+                le_index = shower_pairs[i][j][1]
+                se_index = shower_pairs[i][j][0]
+            # cut on CNN score
+            if cnn_score[i][le_index] < 0.5:
+                mask.mask[i][le_index] = 0
+            if cnn_score[i][se_index] < 0.5:
+                mask.mask[i][se_index] = 0
+            if cnn_score[i][le_index] - cnn_score[i][se_index] > 0.5:
+                mask.mask[i][le_index] = 0
+                mask.mask[i][se_index] = 0
+    return mask
