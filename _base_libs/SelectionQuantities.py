@@ -683,11 +683,13 @@ def CalculateQuantities(data : dict = None, allPairs : bool = False, param = Non
         pair_mc_energies, _, _ = ShowerPairEnergy(shower_pairs, data[ITEM.TRUE_ENERGY])
 
         # create quantities dictionary
-        _dict.update({ITEM.PANDORA_TAG                  : data[ITEM.PANDORA_TAG]})
-        _dict.update({QUANTITY.CNN_SCORE                : data[QUANTITY.CNN_SCORE]})
-        _dict.update({ITEM.HITS                         : data[ITEM.HITS]})
-        _dict.update({ITEM.SHOWER_LENGTH                : data[ITEM.SHOWER_LENGTH]})
-        _dict.update({ITEM.SHOWER_ANGLE                 : data[ITEM.SHOWER_ANGLE]})
+        data_keys = [ITEM.PANDORA_TAG, QUANTITY.CNN_SCORE, ITEM.HITS, ITEM.SHOWER_LENGTH, ITEM.SHOWER_ANGLE]
+        for key in data_keys:
+            if key in data:
+                _dict.update({key : data[key]})
+            else:
+                del _dict[key]
+        
         _dict.update({QUANTITY.BEAM_ANGLE               : BeamTrackShowerAngle(data[ITEM.BEAM_START_POS], data[ITEM.BEAM_END_POS], data[ITEM.DIRECTION])})
         _dict.update({QUANTITY.MC_ANGLE                 : DaughterRecoMCAngle(data[ITEM.TRUE_START_POS], data[ITEM.TRUE_END_POS], data[ITEM.DIRECTION])})
         _dict.update({QUANTITY.START_HITS               : GetShowerStartHits(data[ITEM.HIT_RADIAL], data[ITEM.HIT_LONGITUDINAL], [3, -1, 4])})

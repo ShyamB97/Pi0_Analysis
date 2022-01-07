@@ -699,7 +699,7 @@ def DataList(filename : str, param : ITEM = None, conditional : Conditional = No
     ITEM.HITS             : data.nHits(),
     ITEM.CNN_EM           : data.cnn_em(),
     ITEM.CNN_TRACK        : data.cnn_track(),
-    QUANTITY.CNN_SCORE   : BugFixCNN(data.CNNScore()), # need to move enum to ITEM
+    QUANTITY.CNN_SCORE    : BugFixCNN(data.CNNScore()), # need to move enum to ITEM
     ITEM.PANDORA_TAG      : data.pandoraTag(),
     ITEM.BEAM_START_POS   : data.beam_start_pos(),
     ITEM.BEAM_END_POS     : data.beam_end_pos(),
@@ -717,6 +717,9 @@ def DataList(filename : str, param : ITEM = None, conditional : Conditional = No
     # some information about the data
     print("Number of events: " + str(len(_dict[ITEM.EVENT_ID])))
     print("Number of showers: " + str(len(Unwrap(_dict[ITEM.HITS]))))
+    
+    _dict = {k:v for k,v in _dict.items() if v is not None}
+
     return CutDict(_dict, param, conditional, cut)
 
 
@@ -859,7 +862,9 @@ def CutDict(_dict : str, param=None, conditional : Conditional=None, cut=None, c
             if contains_shower_pairs:
                 # handle single parameter data:
                 for single in single_param:
-                    _dict.update( {single : GetShowersInPairs(_dict[single], _dict[QUANTITY.SHOWER_PAIRS])} )
+                    print(single)
+                    if single in _dict:
+                        _dict.update( {single : GetShowersInPairs(_dict[single], _dict[QUANTITY.SHOWER_PAIRS])} )
                 # update shower pair indices
                 print("updating shower pair indicies")
                 _dict[QUANTITY.SHOWER_PAIRS] = UpdateShowerPairIndex(_dict[QUANTITY.SHOWER_PAIRS])

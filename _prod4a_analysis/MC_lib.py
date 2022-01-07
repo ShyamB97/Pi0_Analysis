@@ -1,6 +1,6 @@
 #import sys
 #sys.path.append('../_base_libs/') # need this to import custom scripts in different directories
-from Master import ITEM, QUANTITY, Vector3, Unwrap, SelectionMask, Conditional, Data, UpdateShowerPair
+from Master import ITEM, QUANTITY, Vector3, Unwrap, SelectionMask, Conditional, Data, UpdateShowerPair, CutDict
 from SelectionQuantities import Angle, GetShowerPairValues, CalculateQuantities
 from Analyser import CalculateDataFrameNew, SortPairsByEnergy
 from Plots import PlotHist, PlotHistComparison, Save, PlotHist2D, PlotBar, PlotBarComparision
@@ -217,10 +217,6 @@ def CalculateResidual(q, true_q, _min=0, _max=5):
     q = q[q < 5]
     q = q[true_q < 5]
     true_q = true_q[true_q < 5]
-
-    print([min(q), max(q)])
-    print([min(true_q), max(true_q)])
-
     return q - true_q
 
 
@@ -389,11 +385,84 @@ def AdvancedCNNScoreMask(cnn_score, shower_pairs, energy) -> SelectionMask:
                 le_index = shower_pairs[i][j][1]
                 se_index = shower_pairs[i][j][0]
             # cut on CNN score
-            if cnn_score[i][le_index] < 0.5:
+            if cnn_score[i][le_index] < 0:
                 mask.mask[i][le_index] = 0
-            if cnn_score[i][se_index] < 0.5:
+            if cnn_score[i][se_index] < 0:
                 mask.mask[i][se_index] = 0
-            if cnn_score[i][le_index] - cnn_score[i][se_index] > 0.5:
+
+            if cnn_score[i][le_index] < 0.4:
+                mask.mask[i][le_index] = 0
+            if cnn_score[i][se_index] < 0.4:
+                mask.mask[i][se_index] = 0
+
+            if 1.25 - cnn_score[i][le_index] > cnn_score[i][se_index]:
                 mask.mask[i][le_index] = 0
                 mask.mask[i][se_index] = 0
     return mask
+
+
+def CutEfficiency(_all, signal, background, selection=None, mask=None, outDir=None, allPairs=True):
+    #nEvt, nShower, nPair = Stats(*_all)
+    signal_nEvt, signal_nShower, signal_nPair = Stats(*signal)
+    background_nEvt, background_nShower, background_nPair = Stats(*background)
+
+    if mask == None and selection != None:
+        new_data = CutDict(_all[0], *selection, None)
+        new_quantities = CalculateQuantities(new_data, allPairs, *selection)
+    elif mask != None and selection == None:
+        new_data = CutDict(_all[0], custom_mask=mask)
+        new_quantities = CalculateQuantities(new_data, allPairs=allPairs)
+    else:
+        print("no selection specified")
+        return
+
+    signal_id = FindPi0Signal(new_quantities, new_data)
+    new_quantities_f = Filter(new_quantities.copy(), signal_id, new_quantities[QUANTITY.SHOWER_PAIRS])
+    new_data_f = Filter(new_data.copy(), signal_id, new_quantities[QUANTITY.SHOWER_PAIRS])
+
+    #new_nEvt, new_nShower, new_nPair = Stats(new_data, new_quantities)
+    new_signal_nEvt, new_signal_nShower, new_signal_nPair = Stats(new_data_f[0], new_quantities_f[0])
+    new_background_nEvt, new_background_nShower, new_background_nPair = Stats(new_data_f[1], new_quantities_f[1])
+
+    #diff_nEvt = abs(new_nEvt - nEvt)
+    #diff_nShower = abs(new_nShower - nShower)
+    #diff_nPair = abs(new_nPair - nPair)
+    
+    #diff_signal_nEvt = abs(new_signal_nEvt - signal_nEvt)
+    #diff_signal_nShower = abs(new_signal_nShower - signal_nShower)
+    diff_signal_nPair = abs(new_signal_nPair - signal_nPair)
+    
+    #diff_background_nEvt = abs(new_background_nEvt - background_nEvt)
+    #diff_background_nShower = abs(new_background_nShower - background_nShower)
+    diff_background_nPair = abs(new_background_nPair - background_nPair)
+
+    signalPercentageLost = (diff_signal_nPair / signal_nPair)
+    backgroundPercentageLost = (diff_background_nPair / background_nPair)
+    sbr_before = (signal_nPair/background_nPair)
+    sbr_after = (new_signal_nPair/new_background_nPair)
+
+    out = ["percentage of signal shower pairs lost: %.3f" % signalPercentageLost,
+           "percentage of background shower pairs lost: %.3f" % backgroundPercentageLost,
+           "shower pair signal background ratio before: %.3f" % sbr_before,
+           "shower pair signal background ratio after: %.3f" % sbr_after]
+
+    if outDir != None:
+        with open(outDir + "cut_performance.txt", "w") as text_file:
+            for line in out:
+                print(line)
+                text_file.write(line + "\n")
+    else:
+        for line in out:
+            print(line)
+
+    return signalPercentageLost, backgroundPercentageLost
+
+
+def Stats(data, quantities):
+    """
+    return general Stats of the data.
+    """
+    number_of_events = len(Unwrap(data[ITEM.EVENT_ID]))
+    number_of_showers = len(Unwrap(data[ITEM.HITS]))
+    number_of_shower_pairs = len(Unwrap(quantities[QUANTITY.SHOWER_SEPERATION]))
+    return number_of_events, number_of_showers, number_of_shower_pairs 
