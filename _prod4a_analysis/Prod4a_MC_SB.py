@@ -44,7 +44,7 @@ def CompareShowerPairs(data, save=False):
 
 
 
-def MakePlots(directory, sub_directory, data_1, data_2, single=True):
+def MakePlots(directory, sub_directory, data_1, data_2, label_1="signal", label_2="background", single=True):
     """
     Main Plotting function, will plot all data, residuals and correlations of invariant mass and it's residuals vs all the data.
     Capable of plotting signal, background or both either in one data set or side-by-side.
@@ -52,12 +52,12 @@ def MakePlots(directory, sub_directory, data_1, data_2, single=True):
     out = directory + sub_directory
     os.makedirs(out, exist_ok=True)
     if single is True:
-        MC_lib.PlotQuantities(data_2, None, True, out)
+        MC_lib.PlotQuantities(data_2, None, True, out, label_1, label_2)
         MC_lib.PlotShowerPairCorrelations(data_1, data_2, True, out)
         MC_lib.PlotResiduals(data_1, data_2, True, out)
         PlotAllCorrelations(data_1, data_2, out)
     else:
-        MC_lib.PlotQuantities(data_1, data_2, True, out)
+        MC_lib.PlotQuantities(data_1, data_2, True, out, label_1, label_2)
 
 
 def Plot():
@@ -74,8 +74,12 @@ def Plot():
     print("background events")
     MakePlots(outDir, "background/", dict(background_d), dict(background_q))
 
-    print("signal + shower")
-    MakePlots(outDir, "both/", dict(signal_q), dict(background_q), single=False)
+    print("signal + background")
+    MakePlots(outDir, "signal-background/", dict(signal_q), dict(background_q), single=False)
+
+    print("signal + all")
+    MakePlots(outDir, "signal-all/", dict(signal_q), dict(quantities), "signal", "all", False)
+
 
 
 def AnalyseCuts():
@@ -95,8 +99,8 @@ def AnalyseCuts():
 
 
 print("loading data...")
-data = Master.DataList(filename="ROOTFiles/Prod4a_6GeV_BeamSim_test.root")
-outDir = "test/"
+data = Master.DataList(filename="ROOTFiles/Prod4a_6GeV_BeamSim_00.root")
+outDir = "Prod4a_6GeV_BeamSim_00_allshower/"
 
 print("computing quantities...")
 selection = [
@@ -108,7 +112,8 @@ selection = [
 null_selection = [None, None, None]
 
 quantities = CalculateQuantities(data, True, *null_selection)
-custom_mask = MC_lib.AdvancedCNNScoreMask(quantities[QUANTITY.CNN_SCORE], quantities[QUANTITY.SHOWER_PAIRS], data[ITEM.ENERGY])
+print(len(Unwrap(quantities[QUANTITY.SHOWER_SEPERATION])))
+#custom_mask = MC_lib.AdvancedCNNScoreMask(quantities[QUANTITY.CNN_SCORE], quantities[QUANTITY.SHOWER_PAIRS], data[ITEM.ENERGY])
 #data = Master.CutDict(data, custom_mask=custom_mask)
 #quantities = CalculateQuantities(data, True, *null_selection)
 
@@ -121,6 +126,6 @@ signal_d, background_d = MC_lib.Filter(data.copy(), mask, quantities[QUANTITY.SH
 
 
 #Plot()
-performance = MC_lib.CutEfficiency((data, quantities), (signal_d, signal_q), (background_d, background_q), selection=None, mask=custom_mask)
+#performance = MC_lib.CutEfficiency((data, quantities), (signal_d, signal_q), (background_d, background_q), selection=None, mask=custom_mask)
 
 #AnalyseCuts()

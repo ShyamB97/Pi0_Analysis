@@ -38,11 +38,13 @@ def PlotSingle(data, ranges, labels, bins, subDirectory, save):
 outDir = "diphoton_100K/"
 os.makedirs(outDir, exist_ok=True)
 b = 50 # number of bins
-save = True
+save = False
 
 #* Loading data
-data = DataList(filename="ROOTFiles/diphoton_100K.root")
-quantities = CalculateQuantities(data, param=[QUANTITY.TRUE_INVARIANT_MASS, QUANTITY.TRUE_OPENING_ANGLE], conditional=[Conditional.GREATER, Conditional.GREATER], cut=[0, 0])
+data = DataList(filename="../ROOTFiles/pi0_0p5GeV_100K_5_7_21.root")
+quantities = CalculateQuantities(data, allPairs=False, param=[QUANTITY.TRUE_OPENING_ANGLE], conditional=[Conditional.EQUAL], cut=[0])
+
+tags = quantities[ITEM.PANDORA_TAG]
 
 #* Residuals
 res_inv_mass, inv_mass, true_inv_mass = Residual(quantities[QUANTITY.INVARIANT_MASS], quantities[QUANTITY.TRUE_INVARIANT_MASS])
@@ -62,13 +64,15 @@ true_sum_momentum = paired_true_energy[:, 0] + paired_true_energy[:, 1]
 #* Plot truths vs residuals
 x = [true_inv_mass, true_angle, true_l_energy, true_s_energy, true_sum_momentum]
 x_l = ["True invariant mass (GeV)", "True opening angle (rad)", "True leading shower energy (GeV)", "True secondary shower energy (GeV)", "True system momentum (GeV)"]
-x_r = [ [], [min(true_angle), 2.5], [], [], [] ]
-#x_r = [ [-998, 0.2], [min(true_angle), 2], [min(true_l_energy), 0.5], [min(true_s_energy), 0.5], [min(true_sum_momentum), 1.1] ]
+#x_r = [ [] ] * 5
+#x_r = [ [], [min(true_angle), 2.5], [], [], [] ]
+x_r = [ [-998, 0.2], [min(true_angle), 2], [min(true_l_energy), 0.5], [min(true_s_energy), 0.5], [min(true_sum_momentum), 1.1] ]
 
 y = [res_inv_mass, res_angle, res_l_energy, res_s_energy]
 y_l = ["Invariant mass residual (GeV)", "Opening angle residual (rad)", "Leading shower energy residual (GeV)", "Secondary shower energy residual (GeV)"]
-y_r = [ [-900, max(res_inv_mass)], [], [-2, max(res_l_energy)], [] ]
-#y_r = [[-0.15, max(res_inv_mass)], [-1, max(res_angle)], [-0.5, max(res_l_energy)], [-0.6, max(res_s_energy)]]
+#y_r = [ [] ] * 4
+#y_r = [ [-900, max(res_inv_mass)], [], [-2, max(res_l_energy)], [] ]
+y_r = [[-0.15, max(res_inv_mass)], [-1, max(res_angle)], [-0.5, max(res_l_energy)], [-0.6, max(res_s_energy)]]
 
 if save is True: os.makedirs(outDir + "2D/", exist_ok=True)
 for j in range(len(y)):
