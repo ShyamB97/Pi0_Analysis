@@ -99,8 +99,8 @@ def AnalyseCuts():
 
 
 print("loading data...")
-data = Master.DataList(filename="ROOTFiles/Prod4a_6GeV_BeamSim_00.root")
-outDir = "Prod4a_6GeV_BeamSim_00_allshower/"
+data = Master.DataList(filename="../ROOTFiles/Prod4a_6GeV_BeamSim_00.root")
+outDir = "test/"
 
 print("computing quantities...")
 selection = [
@@ -124,8 +124,7 @@ print("filtering events...")
 signal_q, background_q = MC_lib.Filter(quantities.copy(), mask, quantities[QUANTITY.SHOWER_PAIRS]) # apply filter to calculated quantities
 signal_d, background_d = MC_lib.Filter(data.copy(), mask, quantities[QUANTITY.SHOWER_PAIRS]) # apply filter to data
 
-
-#Plot()
+Plot()
 #performance = MC_lib.CutEfficiency((data, quantities), (signal_d, signal_q), (background_d, background_q), selection=None, mask=custom_mask)
 
 #AnalyseCuts()

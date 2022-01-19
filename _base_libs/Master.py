@@ -1,13 +1,35 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Feb 25 13:50:53 2021
+Created on  25/02/2021 13:50
 
-@author: sb16165
+Author: Shyam Bhuller
+
+Description: Script which contains core components of the Analysis code.
+contains code to handle root file IO, dictionaries which descibe data structures
+commonly used and labels/enums for easy automation of processing/plotting data.
 """
 
 import uproot
 import numpy as np
 from enum import Enum
+import time
+
+def timer(func):
+    """Decorator which times a function.
+
+    Args:
+        func (function): function to time
+    """
+    def wrapper_function(*args, **kwargs):
+        """times func, returns outputs
+        Returns:
+            any: func output
+        """
+        s = time.time()
+        out = func(*args,  **kwargs)
+        print(f'{func.__name__!r} executed in {(time.time()-s):.4f}s')
+        return out
+    return wrapper_function
 
 
 # Dictionary of parameters we can caculate and cut on
@@ -690,6 +712,19 @@ def BugFixCNN(cnn_score):
 
 # create data dictionary
 def DataList(filename : str, param : ITEM = None, conditional : Conditional = None, cut=None):
+    """Function which creates a dictionary of retrievable values from the ROOT file,
+    acts as a mediator between the Data class and the front end, providing a more
+    pythonic way of managing data. Can make cuts on data.
+
+    Args:
+        filename (str): file name.
+        param (ITEM, optional): parameter to make cut on. Defaults to None.
+        conditional (Conditional, optional): condition of the cut. Defaults to None.
+        cut (any, optional): value of cut. Defaults to None.
+
+    Returns:
+        dict: dictionary of retrievable data.
+    """
     data =  Data(filename)
     _dict = {
     ITEM.START_POS        : data.start_pos(),
@@ -724,6 +759,16 @@ def DataList(filename : str, param : ITEM = None, conditional : Conditional = No
 
 
 def UpdateShowerPair(pair, pair_index, added_showers):
+    """Updates shower pair indices after making cut.
+
+    Args:
+        pair (np.ndarray): shower pair, has length of 2
+        pair_index (int): index of shower pair
+        added_showers (list): list of showers already updated
+
+    Returns:
+        [type]: [description]
+    """
     # shower pairs are the index of the shower in data
     # so to match the data struture of signal/backgound, we need to redefine them
     # the new indices of the showers will be their index in target i.e.
@@ -760,8 +805,18 @@ def UpdateShowerPairIndex(shower_pairs):
     return np.array(new_pairs, object)
 
 
-def CutDict(_dict : str, param=None, conditional : Conditional=None, cut=None, custom_mask : SelectionMask=None):
+def CutDict(_dict : dict, param=None, conditional : Conditional=None, cut=None, custom_mask : SelectionMask=None):
+    """Cuts data in a dictionary from DataList or SelectionQuantities.CalculateQuantities.
 
+    Args:
+        _dict (dict): dictionary to cut
+        param (Enum, optional): parameter to cut, either ITEM or QUANTITIES. Defaults to None.
+        conditional (Conditional, optional): condition of cut. Defaults to None.
+        cut (Any, optional): value to cut at. Defaults to None.
+        custom_mask (SelectionMask, optional): custom mask to override default mask generated (1D). Defaults to None.
+    Returns:
+        dict: dictionary after cutting 
+    """
     def GetShowersInPairs(parameter, pairs, _type=list):
         """
         Used to retrieve values for the unique showers in the pairs
