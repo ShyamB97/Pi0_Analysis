@@ -7,6 +7,8 @@ Description: Plot certain reconstructed quantities from ROOT files produced from
 """
 ### Place this in a script that is inteded to be ran ###
 import sys
+
+from sqlalchemy import true
 sys.path.append('/home/sb16165/Documents/Pi0_Analysis/_base_libs') # need this to import custom scripts in different directories
 ######
 import os
@@ -17,6 +19,7 @@ import Plots
 import itertools
 import numpy as np
 from Master import timer
+import matplotlib.pyplot as plt
 
 
 def vector(x, y, z):
@@ -71,6 +74,7 @@ def prod(s, v):
     return vector(s * v.x, s * v.y, s * v.z)
 
 
+@timer
 def GetPairValues(pairs, value):
     """get shower pair values, in pairs
 
@@ -86,11 +90,15 @@ def GetPairValues(pairs, value):
         pair = pairs[i]
         evt = []
         for j in range(len(pair)):
-            evt.append( [value[i][pair[j][0]], value[i][pair[j][1]]] )
+            if len(pair[j]) > 0:
+                evt.append( [value[i][pair[j][0]], value[i][pair[j][1]]] )
+            else:
+                evt.append([])
         paired.append(evt)
     return ak.Array(paired)
 
 
+@timer
 def AllShowerPairs(nd):
     """Get all shower pair combinations, excluding duplicates and self paired.
 
@@ -116,23 +124,22 @@ def ShowerPairsByHits(hits):
         hits (Array): number of collection plane hits of daughters per event
 
     Returns:
-        [type]: shower pairs (maximum of one per event)
+        [list]: shower pairs (maximum of one per event), note lists are easier to iterate through than np or ak arrays, hence the conversion
     """
     showers = ak.argsort(hits, ascending=False) # shower number sorted by nHits
-    pairs = []
-    for i in range(len(showers)):
-        if len(hits[i]) > 1:
-            pairs.append( [[showers[i][0], showers[i][1]]] )
-        else:
-            pairs.append([])
-    return pairs
+    mask = ak.count(showers, 1) > 1
+    showers = ak.pad_none(showers, 2, clip=True) # only keep two largest showers
+    showers = ak.where( mask, showers, [[]]*len(mask) )
+    pairs = ak.unflatten(showers, 1)
+    return ak.to_list(pairs)
 
 
 save = False
 outDir = "pi0_0p5GeV_100K/reco_info/"
 bins = 50
+allPairs = False
 s = time.time()
-file = uproot.open("../ROOTFiles/pi0_0p5GeV_1K.root")
+file = uproot.open("ROOTFiles/pi0_0p5GeV_100K_5_7_21.root")
 events = file["pduneana/beamana"]
 
 #* number of showers
@@ -140,15 +147,20 @@ nHits = events["reco_daughter_PFP_nHits_collection"].array()
 nDaughter = ak.count(nHits, 1)
 #* leading + subleading energies
 # get shower pairs
-#pairs = AllShowerPairs(nDaughter)
-pairs = ShowerPairsByHits(nHits)
+if allPairs is True:
+    pairs = AllShowerPairs(nDaughter)
+else:
+    pairs = ShowerPairsByHits(nHits)
 
 energy = events["reco_daughter_allShower_energy"].array()
 energy_pair = GetPairValues(pairs, energy)
-flattened = ak.flatten(energy_pair)
-sortedPairs = ak.sort(flattened, ascending=False)
-leading = sortedPairs[:, 0]
-secondary = sortedPairs[:, 1]
+#flattened = ak.flatten(energy_pair)
+sortedPairs = ak.sort(energy_pair, ascending=False)
+leading = sortedPairs[:, :, 1:]
+secondary = sortedPairs[:, :, :-1]
+
+#mask = leading > 0
+#leading = ak.where(mask, leading, [[]]*len(leading))
 
 #* opeining angle
 direction = vector( events["reco_daughter_allShower_dirX"].array(),
@@ -170,30 +182,42 @@ total_energy = leading + secondary # assuming the daughters are photon showers
 shower_mom = prod(energy_pair, direction_pair)
 pi0_momentum = magntiude(ak.sum(shower_mom, axis=2))
 null = np.invert(np.logical_or(leading < 0, secondary < 0)) # mask of shower pairs with invalid energy
-pi0_momentum = ak.flatten(pi0_momentum)[null]
 
-bins = 50
 
 #* plots
+
+if allPairs is False:
+    pi0_momentum = ak.unflatten(pi0_momentum, 1)[null]
+    pi0_momentum = ak.ravel(pi0_momentum)
+# flatten data and remove invalid data i.e. -999
+null = ak.ravel(null)
+if allPairs is True:
+    pi0_momentum = ak.ravel(pi0_momentum)[null] # pi0_momentum has different nested shape than the rest
+
+total_energy = ak.ravel(total_energy)[null]
+leading = ak.ravel(leading)[null]
+secondary = ak.ravel(secondary)[null]
+angle = ak.ravel(angle)[null]
+inv_mass = ak.ravel(inv_mass)[null]
+
 if save is True: os.makedirs(outDir, exist_ok=True)
 
 Plots.PlotBar(ak.to_numpy(nDaughter), xlabel="Number of reconstructed daughter objects per event")
 if save is True: Plots.Save("nDaughters", outDir)
-Plots.PlotHist(total_energy[null]/1000, bins, "Sum shower energy (GeV))")
+Plots.PlotHist(total_energy/1000, bins, "Sum shower energy (GeV))")
 if save is True: Plots.Save("sum_energy", outDir)
-Plots.PlotHist(leading[null]/1000, bins, "Leading shower energy (GeV)")
+Plots.PlotHist(leading/1000, bins, "Leading shower energy (GeV)")
 if save is True: Plots.Save("leading_energy", outDir)
-Plots.PlotHist(secondary[null]/1000, bins, "Subleading shower energy (GeV)")
+Plots.PlotHist(secondary/1000, bins, "Subleading shower energy (GeV)")
 if save is True: Plots.Save("subleading_energy", outDir)
-Plots.PlotHist(ak.flatten(angle), bins, "Opening angle (rad)")
+Plots.PlotHist(angle, bins, "Opening angle (rad)")
 if save is True: Plots.Save("angle", outDir)
-
-inv_mass = ak.flatten(inv_mass, 1)/1000
-inv_mass = ak.flatten(inv_mass)
-Plots.PlotHist(inv_mass[null], bins, "Invariant mass (GeV)")
+Plots.PlotHist(inv_mass/1000, bins, "Invariant mass (GeV)")
 if save is True: Plots.Save("mass", outDir)
 Plots.PlotHist(pi0_momentum/1000, bins, "$\pi^{0}$ momentum (GeV)")
 if save is True: Plots.Save("pi0_momentum", outDir)
 print(f'time taken: {(time.time()-s):.4f}' )
+if save is False:
+    plt.show()
 
 #? make more usable in the terminal? i.e. args and main func
