@@ -7,8 +7,6 @@ Description: Plot certain reconstructed quantities from ROOT files produced from
 """
 ### Place this in a script that is inteded to be ran ###
 import sys
-
-from sqlalchemy import true
 sys.path.append('/home/sb16165/Documents/Pi0_Analysis/_base_libs') # need this to import custom scripts in different directories
 ######
 import os
@@ -20,58 +18,45 @@ import itertools
 import numpy as np
 from Master import timer
 import matplotlib.pyplot as plt
+from vector import *
 
-
-def vector(x, y, z):
-    """Creates a vector like record
-
-    Args:
-        x (Any): x component
-        y (Any): y component
-        z (Any): z component
-
-    Returns:
-        ak.Record: record structurd like a 3-vector
-    """
-    return ak.zip({"x" : x, "y" : y, "z" : z})
-
-
-def magntiude(vec):
-    """magnitude of 3-vector
+@timer
+def MatchMC(true, reco):
+    """ Matches Reconstructed showers to true photons and selected the best events
+        i.e. ones which have both errors of less than 0.25 radians. Only works for
+        events with two reconstructed showers and two true photons per event.
 
     Args:
-        vec (ak.Record created by vector): vector
+        true (ak.Record created by vector): direction of true photons
+        reco (ak.Record created by vector): direction of reco showers
 
     Returns:
-        ak.Array: array of magnitudes
+        ak.Array: shower indices in order of true photon number
+        ak.Array: mask which indicates which pi0 decays are "good"
     """
-    return (vec.x**2 + vec.y**2 + vec.z**2)**0.5
+    # angle of all reco showers wrt to each true photon per event i.e. error
+    angle_error_0 = angle(reco, true[:, 0])
+    angle_error_1 = angle(reco, true[:, 1])
 
-
-def dot(a, b):
-    """dot product of 3-vector
-
-    Args:
-        a (ak.Record created by vector): first vector
-        b (ak.Record created by vector): second vector
-
-    Returns:
-        ak.Array: array of dot products
-    """
-    return (a.x * b.x) + (a.y * b.y) + (a.z * b.z)
-
-
-def prod(s, v):
-    """product of scalar and vector
-
-    Args:
-        s (ak.Array or single number): scalar
-        v (ak.Record created by vector): vector
-
-    Returns:
-        ak.Record created by vector: s * v
-    """
-    return vector(s * v.x, s * v.y, s * v.z)
+    # get smallest angle wrt to each true photon
+    m_0 = ak.unflatten(ak.min(angle_error_0, -1), 1)
+    m_1 = ak.unflatten(ak.min(angle_error_1, -1), 1)
+    angles = ak.concatenate([m_0, m_1], -1)
+    
+    # get shower which had the smallest angle
+    #NOTE reco showers are now sorted by true photon number essentially. 
+    m_0 = ak.unflatten(ak.argmin(angle_error_0, -1), 1)
+    m_1 = ak.unflatten(ak.argmin(angle_error_1, -1), 1)
+    showers = ak.concatenate([m_0, m_1], -1)
+    
+    # get events where both reco MC angles are less than 0.25 radians
+    mask = np.logical_and(angles[:, 0] < 0.25, angles[:, 1] < 0.25)
+    
+    # check how many showers had the same reco match to both true particles
+    same_match = showers[:, 0][mask] == showers[:, 1][mask]
+    print(f"number of events where both photons match to the same shower: {ak.count(ak.mask(same_match, same_match) )}")
+    
+    return showers, mask
 
 
 @timer
@@ -134,17 +119,53 @@ def ShowerPairsByHits(hits):
     return ak.to_list(pairs)
 
 
-save = False
-outDir = "pi0_0p5GeV_100K/reco_info/"
+save = True
+outDir = "pi0_0p5GeV_100K/match_MC/reco_info/"
 bins = 50
 allPairs = False
 s = time.time()
 file = uproot.open("ROOTFiles/pi0_0p5GeV_100K_5_7_21.root")
 events = file["pduneana/beamana"]
 
-#* number of showers
 nHits = events["reco_daughter_PFP_nHits_collection"].array()
+direction = vector( events["reco_daughter_allShower_dirX"].array(),
+                    events["reco_daughter_allShower_dirY"].array(),
+                    events["reco_daughter_allShower_dirZ"].array() )
+
+
+#* number of showers
 nDaughter = ak.count(nHits, 1)
+
+#* filter events
+r_mask = nDaughter == 2
+
+t_mom = vector(events["g4_pX"].array(), events["g4_pY"].array(), events["g4_pZ"].array())
+t_dir = normalize(t_mom)
+
+t_num = events["g4_num"].array()
+t_mother =events["g4_mother"].array()
+t_pdg = events["g4_Pdg"].array()
+
+
+photons = t_mother == 1 # get only primary daughters
+photons = t_pdg == 22 # get only photons
+t_mask = ak.num(photons[photons], -1) == 2 # exclude pi0 -> e+ + e- + photons
+# Plots.PlotBar(ak.to_list(t_pdg[t_mask]))
+
+valid = np.logical_and(r_mask, t_mask) # events which have 2 reco daughters and correct pi0 decay
+
+null = ak.any(direction.x == -999, 1) # exclude events where direction couldn't be calculated
+
+valid = np.logical_and(valid, np.logical_not(null))
+
+direction = direction[valid]
+t_dir = t_dir[photons][valid]
+
+showers, selection_mask = MatchMC(t_dir, direction)
+
+direction = direction[showers][selection_mask]
+nHits = nHits[valid][showers][selection_mask]
+
 #* leading + subleading energies
 # get shower pairs
 if allPairs is True:
@@ -152,20 +173,13 @@ if allPairs is True:
 else:
     pairs = ShowerPairsByHits(nHits)
 
-energy = events["reco_daughter_allShower_energy"].array()
+energy = events["reco_daughter_allShower_energy"].array()[valid][showers][selection_mask]
 energy_pair = GetPairValues(pairs, energy)
-#flattened = ak.flatten(energy_pair)
-sortedPairs = ak.sort(energy_pair, ascending=False)
+sortedPairs = ak.sort(energy_pair, ascending=True)
 leading = sortedPairs[:, :, 1:]
 secondary = sortedPairs[:, :, :-1]
 
-#mask = leading > 0
-#leading = ak.where(mask, leading, [[]]*len(leading))
-
-#* opeining angle
-direction = vector( events["reco_daughter_allShower_dirX"].array(),
-                    events["reco_daughter_allShower_dirY"].array(),
-                    events["reco_daughter_allShower_dirZ"].array() )
+#* opening angle
 
 direction_pair = GetPairValues(pairs, direction)
 direction_pair_mag = magntiude(direction_pair)
