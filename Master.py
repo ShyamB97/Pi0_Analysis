@@ -80,15 +80,15 @@ RecoParticles
 """
 
 class Event:
-    def __init__(self, _filename : str) -> None:
+    def __init__(self, _filename : str = None) -> None:
         self.filename = _filename
-        self.io = IO(self.filename)
-        self.trueParticles = TrueParticles(self.io, self)
-        self.recoParticles = RecoParticles(self.io, self)
+        if self.filename != None:
+            self.io = IO(self.filename)
+            self.trueParticles = TrueParticles(self)
+            self.recoParticles = RecoParticles(self)
 
     def SortByTrueEnergy(self):
-        photonEnergy = self.trueParticles.energy
-        photonEnergy = photonEnergy[photonEnergy == 22]
+        photonEnergy = self.trueParticles.energy[self.trueParticles.pdg == 22]
         return ak.argsort(photonEnergy, ascending=True)
 
     @timer
@@ -128,6 +128,13 @@ class Event:
         print(f"number of events where both photons match to the same shower: {ak.count(ak.mask(same_match, same_match) )}")
 
         return showers, mask
+    
+    @timer
+    def Filter(self, reco_filters : list = [], true_filters : list = []):
+        filtered = Event()
+        filtered.trueParticles = self.trueParticles.Filter(true_filters)
+        filtered.recoParticles = self.recoParticles.Filter(reco_filters)
+        return filtered
 
 
 class TrueParticles:
@@ -140,15 +147,32 @@ class TrueParticles:
         "g4_startE"
     )
     #? do something with leaves?
-    def __init__(self, io : IO, events : Event) -> None:
-        self.number = io.Get("g4_num")
-        self.mother = io.Get("g4_mother")
-        self.pdg = io.Get("g4_Pdg")
-        self.energy = io.Get("g4_startE")
-        self.momentum = ak.zip({"x" : io.Get("g4_pX"),
-                                "y" : io.Get("g4_pY"),
-                                "z" : io.Get("g4_pZ")})
+    def __init__(self, events : Event) -> None:
         self.events = events # parent of TrueParticles
+        if self.events.io != None:
+            self.number = self.events.io.Get("g4_num")
+            self.mother = self.events.io.Get("g4_mother")
+            self.pdg = self.events.io.Get("g4_Pdg")
+            self.energy = self.events.io.Get("g4_startE")
+            self.momentum = ak.zip({"x" : self.events.io.Get("g4_pX"),
+                                    "y" : self.events.io.Get("g4_pY"),
+                                    "z" : self.events.io.Get("g4_pZ")})
+
+
+    def Filter(self, filters : list):
+        filtered = TrueParticles(self.events)
+        filtered.number = self.number
+        filtered.mother = self.mother
+        filtered.pdg = self.pdg
+        filtered.energy = self.energy
+        filtered.momentum = self.momentum
+        for f in filters:
+            filtered.number = filtered.number[f]
+            filtered.mother = filtered.mother[f]
+            filtered.pdg = filtered.pdg[f]
+            filtered.energy = filtered.energy[f]
+            filtered.momentum = filtered.momentum[f]
+        return filtered
 
 
 class RecoParticles:
@@ -160,13 +184,27 @@ class RecoParticles:
         "reco_daughter_allShower_energy"
     )
     #? do something with leaves?
-    def __init__(self, io : IO, events : Event) -> None:
-        self.nHits = io.Get("reco_daughter_PFP_nHits_collection")
-        self.direction = ak.zip({"x" : io.Get("reco_daughter_allShower_dirX"),
-                                 "y" : io.Get("reco_daughter_allShower_dirY"),
-                                 "z" : io.Get("reco_daughter_allShower_dirZ")})
-        self.energy = io.Get("reco_daughter_allShower_energy")
-        self.events = events # parent of TrueParticles
+
+    def __init__(self, events : Event) -> None:
+        self.events = events # parent of RecoParticles
+        if self.events.io != None:
+            self.nHits = self.events.io.Get("reco_daughter_PFP_nHits_collection")
+            self.direction = ak.zip({"x" : self.events.io.Get("reco_daughter_allShower_dirX"),
+                                     "y" : self.events.io.Get("reco_daughter_allShower_dirY"),
+                                     "z" : self.events.io.Get("reco_daughter_allShower_dirZ")})
+            self.energy = self.events.io.Get("reco_daughter_allShower_energy")
+
+
+    def Filter(self, filters : list):
+        filtered = RecoParticles(self.events)
+        filtered.nHits = self.nHits
+        filtered.direction = self.direction
+        self.energy = self.energy
+        for f in filters:
+            filtered.nHits = filtered.nHits[f]
+            filtered.direction = filtered.direction[f]
+            filtered.energy = filtered.energy[f]
+        return filtered
 
     @timer
     def GetPairValues(pairs, value):

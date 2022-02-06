@@ -16,38 +16,35 @@ import vector
 
 
 @Master.timer
-def MCTruth():
-    global sortindex #! come up with better way!
+def MCTruth(sortEnergy):
     #* get the primary pi0
-    mask_pi0 = np.logical_and(g4_num == 1, pdg == 111)
+    mask_pi0 = np.logical_and(events.trueParticles.number == 1, events.trueParticles.pdg == 111)
 
     #* get pi0 -> two photons only
-    mask_daughters = ak.all(pdg != 11, axis=1)
-    mask_daughters = np.logical_and(g4_mother == 1, mask_daughters)
+    mask_daughters = ak.all(events.trueParticles.pdg != 11, axis=1)
+    mask_daughters = np.logical_and(events.trueParticles.mother == 1, mask_daughters)
 
     #* compute start momentum of dauhters
-    p_daughter = momentum[mask_daughters]
+    p_daughter = events.trueParticles.momentum[mask_daughters]
     sum_p = ak.sum(p_daughter, axis=1)
     sum_p = vector.magntiude(sum_p)
     p_daughter_mag = vector.magntiude(p_daughter)
-    sortindex = ak.argsort(p_daughter_mag, ascending=True) # hacked way to sort reco showers by true energy
-    #p_daughter_mag = ak.sort(p_daughter_mag, ascending=True) # sort by leading photon
-    p_daughter_mag = p_daughter_mag[sortindex]
+    p_daughter_mag = p_daughter_mag[sortEnergy]
 
     #* compute true opening angle
     angle = np.arccos(vector.dot(p_daughter[:, 1:], p_daughter[:, :-1]) / (p_daughter_mag[:, 1:] * p_daughter_mag[:, :-1]))
 
     #* compute invariant mass
-    e_daughter = startE[mask_daughters]
+    e_daughter = events.trueParticles.energy[mask_daughters]
     inv_mass = (2 * e_daughter[:, 1:] * e_daughter[:, :-1] * (1 - np.cos(angle)))**0.5
 
     #* pi0 momentum
-    p_pi0 = momentum[mask_pi0]
+    p_pi0 = events.trueParticles.momentum[mask_pi0]
     p_pi0 = vector.magntiude(p_pi0)
     return inv_mass, angle, p_daughter_mag[:, 1:], p_daughter_mag[:, :-1], p_pi0
 
 @Master.timer
-def RecoMC():
+def RecoMC(sortEnergy):
     #* leading + subleading energies
     # get shower pairs
     #pairs = ShowerPairsByHits(nHits)
@@ -58,13 +55,13 @@ def RecoMC():
     #leading = sortedPairs[:, :, 1:]
     #secondary = sortedPairs[:, :, :-1]
     #! not needed if we match to true photons
-    sortedPairs = ak.unflatten(energy[sortindex], 1, 0)
+    sortedPairs = ak.unflatten(events.recoParticles.energy[sortEnergy], 1, 0)
     leading = sortedPairs[:, :, 1:]
     secondary = sortedPairs[:, :, :-1]
 
     #* opening angle
     #direction_pair = GetPairValues(pairs, r_dir)
-    direction_pair = ak.unflatten(r_dir[sortindex], 1, 0)
+    direction_pair = ak.unflatten(events.recoParticles.direction[sortEnergy], 1, 0)
     direction_pair_mag = vector.magntiude(direction_pair)
     angle = np.arccos(vector.dot(direction_pair[:, :, 1:], direction_pair[:, :, :-1]) / (direction_pair_mag[:, :, 1:] * direction_pair_mag[:, :, :-1]))
 
@@ -159,33 +156,24 @@ save = False
 outDir = "pi0_0p5GeV_100K/match_MC/quality/"
 bins = 50
 s = time.time()
-events = Master.Event("../ROOTFiles/pi0_0p5GeV_100K_5_7_21.root")
-#* truth information
-t_dir = vector.normalize(events.trueParticles.momentum)
+events = Master.Event("ROOTFiles/pi0_0p5GeV_100K_5_7_21.root")
+
 
 #* filter
 valid, photons = Master.Pi0MCFilter(events, 2)
 
-r_dir = events.recoParticles.direction[valid]
-t_dir = t_dir[photons][valid]
+shower_dir = events.recoParticles.direction[valid]
+photon_dir = vector.normalize(events.trueParticles.momentum)[photons][valid]
 
-showers, selection_mask = events.MatchMC(t_dir, r_dir)
+showers, selection_mask = events.MatchMC(photon_dir, shower_dir)
 
-r_dir = r_dir[showers][selection_mask]
+events = events.Filter([valid, showers, selection_mask], [valid, selection_mask])
 
-nHits = events.recoParticles.nHits[valid][showers][selection_mask]
-energy = events.recoParticles.energy[valid][showers][selection_mask]
 
-momentum = events.trueParticles.momentum[valid][selection_mask]
-pdg = events.trueParticles.pdg[valid][selection_mask]
-startE = events.trueParticles.energy[valid][selection_mask]
-g4_num = events.trueParticles.number[valid][selection_mask]
-g4_mother = events.trueParticles.mother[valid][selection_mask]
+sort = events.SortByTrueEnergy()
 
-sort_new = events.SortByTrueEnergy()
-
-mct = MCTruth()
-rmc = RecoMC()
+mct = MCTruth(sort)
+rmc = RecoMC(sort)
 
 # keep track of events with no shower pairs
 null = ak.flatten(rmc[-1], -1)
