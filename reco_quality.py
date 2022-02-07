@@ -6,7 +6,6 @@ Author: Shyam Bhuller
 Description: compare recontructed MC to MC truth.
 """
 import os
-import uproot
 import awkward as ak
 import time
 import Plots
@@ -16,7 +15,15 @@ import vector
 
 
 @Master.timer
-def MCTruth(sortEnergy):
+def MCTruth(sortEnergy) -> tuple[ak.Array, ak.Array, ak.Array, ak.Array, ak.Array]:
+    """Calculate true shower pair quantities.
+
+    Args:
+        sortEnergy (ak.array): mask to sort shower pairs by true energy
+
+    Returns:
+        tuple of ak.Array: calculated quantities
+    """
     #* get the primary pi0
     mask_pi0 = np.logical_and(events.trueParticles.number == 1, events.trueParticles.pdg == 111)
 
@@ -44,7 +51,15 @@ def MCTruth(sortEnergy):
     return inv_mass, angle, p_daughter_mag[:, 1:], p_daughter_mag[:, :-1], p_pi0
 
 @Master.timer
-def RecoMC(sortEnergy):
+def RecoMC(sortEnergy) -> tuple[ak.Array, ak.Array, ak.Array, ak.Array, ak.Array, ak.Array]:
+    """Calculate reconstructed shower pair quantities.
+
+    Args:
+        sortEnergy (ak.array): mask to sort shower pairs by true energy
+
+    Returns:
+        tuple of ak.Array: calculated quantities + array which masks null shower pairs
+    """
     #* leading + subleading energies
     # get shower pairs
     #pairs = ShowerPairsByHits(nHits)
@@ -101,7 +116,17 @@ def RecoMC(sortEnergy):
     return inv_mass, angle, leading, secondary, pi0_momentum, ak.unflatten(null, 1, 0)
 
 
-def Error(reco, true, null):
+def Error(reco, true, null) -> tuple[np.array, np.array, np.array]:
+    """Calcuate error, filter null data and format data for plotting.
+
+    Args:
+        reco (ak.array): reconstructed quantity
+        true (ak.array): true quantity
+        null (ak.array): mask for events without shower pairs, reco direction or energy
+
+    Returns:
+        tuple of np.array: flattened numpy array of errors, reco and truth
+    """
     true = true[null]
     true = ak.where( ak.num(true, 1) > 0, true, [np.nan]*len(true) )
     reco = ak.flatten(reco, 1)[null]
@@ -133,12 +158,17 @@ def PlotSingle(data, ranges, labels, bins, subDirectory, names, save):
 
 
 def PlotReco(reco):
-    #Plots.PlotBar(ak.to_numpy(nDaughter), xlabel="Number of reconstructed daughter objects per event")
-    #if save is True: Plots.Save("nDaughters", outDir)
+    """Plot reconstructed quantities.
+
+    Args:
+        reco (np.array): numpy array of reconstructed quantities.
+    """
+    Plots.PlotBar(ak.to_numpy(nDaughters), xlabel="Number of reconstructed daughter objects per event")
+    if save is True: Plots.Save("nDaughters", outDir)
     #Plots.PlotHist(total_energy/1000, bins, "Sum shower energy (GeV))")
     #if save is True: Plots.Save("sum_energy", outDir)
     outDirReco = outDir + "reco/"
-    reco[reco==-999]=None
+    reco[reco == -999] = None
     if save is True: os.makedirs(outDirReco, exist_ok=True)
     Plots.PlotHist(reco[2], bins, "Leading shower energy (GeV)")
     if save is True: Plots.Save("leading_energy", outDirReco)
@@ -158,6 +188,7 @@ bins = 50
 s = time.time()
 events = Master.Event("ROOTFiles/pi0_0p5GeV_100K_5_7_21.root")
 
+nDaughters = ak.count(events.recoParticles.nHits, -1) # for plotting
 
 #* filter
 valid, photons = Master.Pi0MCFilter(events, 2)
@@ -168,7 +199,6 @@ photon_dir = vector.normalize(events.trueParticles.momentum)[photons][valid]
 showers, selection_mask = events.MatchMC(photon_dir, shower_dir)
 
 events = events.Filter([valid, showers, selection_mask], [valid, selection_mask])
-
 
 sort = events.SortByTrueEnergy()
 
@@ -219,6 +249,5 @@ if save is True: Plots.Save( "fractional_subleading" , outDir + "2D/")
 
 PlotReco(reco)
 
-#? plot truths not needed
 PlotSingle(true, x_r, x_l, bins, outDir + "truths/", names, save)
 print(f'time taken: {(time.time()-s):.4f}' )

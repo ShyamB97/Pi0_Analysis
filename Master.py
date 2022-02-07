@@ -5,6 +5,8 @@ Author: Shyam Bhuller
 
 Description: Module containing core components of analysis code. 
 """
+from __future__ import annotations
+
 import uproot
 import awkward as ak
 import time
@@ -33,10 +35,18 @@ def timer(func):
 class IO:
     #? handle opening root file, and setting the ith event
     #? should this be a module rather than class?
-    def __init__(self, _filename) -> None:
+    def __init__(self, _filename : str) -> None:
         self.file = uproot.open(_filename)["pduneana/beamana"]
         self.nEvents = len(self.file["EventID"].array())
     def Get(self, item : str) -> ak.Array:
+        """Load nTuple from root file as awkward array.
+
+        Args:
+            item (str): nTuple name in root file
+
+        Returns:
+            ak.Array: nTuple loaded
+        """        
         try:
             return self.file[item].array()
         except uproot.KeyInFileError:
@@ -87,12 +97,17 @@ class Event:
             self.trueParticles = TrueParticles(self)
             self.recoParticles = RecoParticles(self)
 
-    def SortByTrueEnergy(self):
+    def SortByTrueEnergy(self) -> ak.Array:
+        """returns index of shower pairs sorted by true energy (highest first).
+
+        Returns:
+            ak.Array: [description]
+        """
         photonEnergy = self.trueParticles.energy[self.trueParticles.pdg == 22]
         return ak.argsort(photonEnergy, ascending=True)
 
     @timer
-    def MatchMC(self, photon_dir, shower_dir, cut=0.25):
+    def MatchMC(self, photon_dir, shower_dir, cut=0.25) -> tuple[ak.Array, ak.Array]:
         """ Matches Reconstructed showers to true photons and selected the best events
             i.e. ones which have both errors of less than 0.25 radians. Only works for
             events with two reconstructed showers and two true photons per event.
@@ -130,7 +145,16 @@ class Event:
         return showers, mask
     
     @timer
-    def Filter(self, reco_filters : list = [], true_filters : list = []):
+    def Filter(self, reco_filters : list = [], true_filters : list = []) -> Event:
+        """Filter events.
+
+        Args:
+            reco_filters (list, optional): list of filters to apply to reconstructed data. Defaults to [].
+            true_filters (list, optional): list of filters to apply to true data. Defaults to [].
+
+        Returns:
+            Event: filtered events
+        """
         filtered = Event()
         filtered.trueParticles = self.trueParticles.Filter(true_filters)
         filtered.recoParticles = self.recoParticles.Filter(reco_filters)
@@ -159,7 +183,15 @@ class TrueParticles:
                                     "z" : self.events.io.Get("g4_pZ")})
 
 
-    def Filter(self, filters : list):
+    def Filter(self, filters : list) -> TrueParticles:
+        """Filter true particle data.
+
+        Args:
+            filters (list): list of filters to apply to true data.
+
+        Returns:
+            TrueParticles: filtered data.
+        """
         filtered = TrueParticles(self.events)
         filtered.number = self.number
         filtered.mother = self.mother
@@ -195,7 +227,15 @@ class RecoParticles:
             self.energy = self.events.io.Get("reco_daughter_allShower_energy")
 
 
-    def Filter(self, filters : list):
+    def Filter(self, filters : list) -> RecoParticles:
+        """Filter reconstructed data.
+
+        Args:
+            filters (list): list of filters to apply to reconstructed data.
+
+        Returns:
+            RecoParticles: filtered data.
+        """
         filtered = RecoParticles(self.events)
         filtered.nHits = self.nHits
         filtered.direction = self.direction
@@ -207,7 +247,7 @@ class RecoParticles:
         return filtered
 
     @timer
-    def GetPairValues(pairs, value):
+    def GetPairValues(pairs, value) -> ak.Array:
         """get shower pair values, in pairs
 
         Args:
@@ -230,11 +270,11 @@ class RecoParticles:
         return ak.Array(paired)
 
     @timer
-    def AllShowerPairs(nd):
+    def AllShowerPairs(nd) -> list:
         """Get all shower pair combinations, excluding duplicates and self paired.
 
         Args:
-            nd (Array): number of daughters in an event
+            nd (ak.Array): number of daughters in an event
 
         Returns:
             list: Jagged array of pairs per event
@@ -246,16 +286,16 @@ class RecoParticles:
         return pairs
 
     @timer
-    def ShowerPairsByHits(hits):
+    def ShowerPairsByHits(hits) -> list:
         """pair reconstructed showers in an event by the number of hits.
         pairs the two largest showers per event.
         TODO figure out a way to do this without sorting events (or re-sort events?)
 
         Args:
-            hits (Array): number of collection plane hits of daughters per event
+            hits (ak.Array): number of collection plane hits of daughters per event
 
         Returns:
-            [list]: shower pairs (maximum of one per event), note lists are easier to iterate through than np or ak arrays, hence the conversion
+            list: shower pairs (maximum of one per event), note lists are easier to iterate through than np or ak arrays, hence the conversion
         """
         showers = ak.argsort(hits, ascending=False) # shower number sorted by nHits
         mask = ak.count(showers, 1) > 1
@@ -266,7 +306,19 @@ class RecoParticles:
 
 
 
-def Pi0MCFilter(events : Event, daughters : int = None):
+def Pi0MCFilter(events : Event, daughters : int = None) -> tuple[ak.Array, ak.Array]:
+    """A filter for Pi0 MC dataset, selects events with a specific number of daughters
+       and masks events where the direction has a null value -999. also returns indices
+       of true photons to use when matching MC to reco.
+
+    Args:
+        events (Event): events being studied
+        daughters (int): keep events with specific number of daughters. Defaults to None
+
+    Returns:
+        ak.Array: mask of events to filter
+        ak.Array: mask of true photons to apply to true data
+    """
     nDaughter = ak.count(events.recoParticles.nHits, 1)
     
     if daughters == None:

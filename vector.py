@@ -9,8 +9,8 @@ Description: contais vector operations, based of awkward array records.
 import awkward as ak
 import numpy as np
 
-def vector(x, y, z):
-    """Creates a vector like record
+def vector(x : ak.Array, y : ak.Array, z : ak.Array) -> ak.Record:
+    """Creates a vector like record, not really meant to be called outside of module.
 
     Args:
         x (Any): x component
@@ -23,7 +23,7 @@ def vector(x, y, z):
     return ak.zip({"x" : x, "y" : y, "z" : z})
 
 
-def magntiude(vec):
+def magntiude(vec : ak.Record) -> ak.Array:
     """magnitude of 3-vector
 
     Args:
@@ -35,7 +35,7 @@ def magntiude(vec):
     return (vec.x**2 + vec.y**2 + vec.z**2)**0.5
 
 
-def normalize(vec):
+def normalize(vec : ak.Record) -> ak.Record:
     """Normalize a vector (get direction)
 
     Args:
@@ -48,7 +48,7 @@ def normalize(vec):
     return vector( vec.x / m, vec.y / m, vec.z / m )
 
 
-def dot(a, b):
+def dot(a : ak.Record, b : ak.Record) -> ak.Array:
     """dot product of 3-vector
 
     Args:
@@ -61,7 +61,7 @@ def dot(a, b):
     return (a.x * b.x) + (a.y * b.y) + (a.z * b.z)
 
 
-def prod(s, v):
+def prod(s, v : ak.Record) -> ak.Record:
     """product of scalar and vector
 
     Args:
@@ -74,7 +74,7 @@ def prod(s, v):
     return vector(s * v.x, s * v.y, s * v.z)
 
 
-def angle(a, b):
+def angle(a : ak.Record, b : ak.Record) -> ak.Array:
     """Compute angle between two vectors
 
     Args:
@@ -82,6 +82,6 @@ def angle(a, b):
         b (ak.Record created by vector): another vector
 
     Returns:
-        [ak.Array]: angle between a and b
+        ak.Array: angle between a and b
     """
     return np.arccos(dot(a, b) / (magntiude(a) * magntiude(b)))
