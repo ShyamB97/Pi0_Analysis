@@ -324,7 +324,7 @@ def Pi0MCFilter(events : Event, daughters : int = None) -> tuple[ak.Array, ak.Ar
     if daughters == None:
         r_mask = nDaughter > 1
     else:
-        r_mask = nDaughter == 2
+        r_mask = nDaughter == daughters
     
     photons = events.trueParticles.mother == 1 # get only primary daughters
     photons = events.trueParticles.pdg == 22 # get only photons
