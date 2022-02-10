@@ -262,7 +262,7 @@ class RecoParticles:
             self.energy = self.events.io.Get("reco_daughter_allShower_energy")
             self.beam_number = self.events.io.Get("beamNum")
             self.number = self.events.io.Get("reco_PFP_ID")
-            self.moter = self.events.io.Get("reco_PFP_Mother")
+            self.mother = self.events.io.Get("reco_PFP_Mother")
 
 
     def Filter(self, filters : list):
