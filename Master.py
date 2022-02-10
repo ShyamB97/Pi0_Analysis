@@ -5,7 +5,6 @@ Author: Shyam Bhuller
 
 Description: Module containing core components of analysis code. 
 """
-from __future__ import annotations
 
 import uproot
 import awkward as ak
@@ -97,17 +96,22 @@ class Event:
             self.trueParticles = TrueParticles(self)
             self.recoParticles = RecoParticles(self)
 
-    def SortByTrueEnergy(self) -> ak.Array:
+    def SortByTrueEnergy(self, primary : bool = True) -> ak.Array:
         """returns index of shower pairs sorted by true energy (highest first).
+
+        Args:
+            primary (bool): sort index of primary pi0 decay photons (particle gun MC)
 
         Returns:
             ak.Array: [description]
         """
-        photonEnergy = self.trueParticles.energy[self.trueParticles.pdg == 22]
-        return ak.argsort(photonEnergy, ascending=True)
+        mask = self.trueParticles.pdg == 22
+        if primary is True:
+            mask = np.logical_and(mask, self.trueParticles.mother == 1)
+        return ak.argsort(self.trueParticles.energy[mask], ascending=True)
 
     @timer
-    def MatchMC(self, photon_dir, shower_dir, cut=0.25) -> tuple[ak.Array, ak.Array]:
+    def MatchMC(self, photon_dir, shower_dir, cut=0.25, returnAngles=False):
         """ Matches Reconstructed showers to true photons and selected the best events
             i.e. ones which have both errors of less than 0.25 radians. Only works for
             events with two reconstructed showers and two true photons per event.
@@ -142,10 +146,13 @@ class Event:
         same_match = showers[:, 0][mask] == showers[:, 1][mask]
         print(f"number of events where both photons match to the same shower: {ak.count(ak.mask(same_match, same_match) )}")
 
-        return showers, mask
+        if returnAngles is True:
+            return showers, mask, angles
+        else:
+            return showers, mask
     
     @timer
-    def Filter(self, reco_filters : list = [], true_filters : list = []) -> Event:
+    def Filter(self, reco_filters : list = [], true_filters : list = []):
         """Filter events.
 
         Args:
@@ -168,7 +175,13 @@ class TrueParticles:
         "g4_pX",
         "g4_pY",
         "g4_pZ",
-        "g4_startE"
+        "g4_startE",
+        "g4_startX",
+        "g4_startY",
+        "g4_startZ",
+        "g4_endX",
+        "g4_endY",
+        "g4_endZ"
     )
     #? do something with leaves?
     def __init__(self, events : Event) -> None:
@@ -181,9 +194,16 @@ class TrueParticles:
             self.momentum = ak.zip({"x" : self.events.io.Get("g4_pX"),
                                     "y" : self.events.io.Get("g4_pY"),
                                     "z" : self.events.io.Get("g4_pZ")})
+            self.direction = vector.normalize(self.momentum)
+            self.startPos = ak.zip({"x" : self.events.io.Get("g4_startX"),
+                                    "y" : self.events.io.Get("g4_startY"),
+                                    "z" : self.events.io.Get("g4_startZ")})
+            self.endPos = ak.zip({"x" : self.events.io.Get("g4_endX"),
+                                  "y" : self.events.io.Get("g4_endY"),
+                                  "z" : self.events.io.Get("g4_endZ")})
 
 
-    def Filter(self, filters : list) -> TrueParticles:
+    def Filter(self, filters : list):
         """Filter true particle data.
 
         Args:
@@ -198,12 +218,18 @@ class TrueParticles:
         filtered.pdg = self.pdg
         filtered.energy = self.energy
         filtered.momentum = self.momentum
+        filtered.direction = self.direction
+        filtered.startPos = self.startPos
+        filtered.endPos = self.endPos
         for f in filters:
             filtered.number = filtered.number[f]
             filtered.mother = filtered.mother[f]
             filtered.pdg = filtered.pdg[f]
             filtered.energy = filtered.energy[f]
             filtered.momentum = filtered.momentum[f]
+            filtered.direction = filtered.direction[f]
+            filtered.startPos = filtered.startPos[f]
+            filtered.endPos = filtered.endPos[f]
         return filtered
 
 
@@ -214,6 +240,12 @@ class RecoParticles:
         "reco_daughter_allShower_dirY",
         "reco_daughter_allShower_dirZ",
         "reco_daughter_allShower_energy"
+        "reco_daughter_allShower_startX",
+        "reco_beam_daughter_allShower_startY",
+        "reco_beam_daughter_allShower_startZ",
+        "beamNum",
+        "reco_PFP_ID",
+        "reco_PFP_Mother"
     )
     #? do something with leaves?
 
@@ -224,10 +256,16 @@ class RecoParticles:
             self.direction = ak.zip({"x" : self.events.io.Get("reco_daughter_allShower_dirX"),
                                      "y" : self.events.io.Get("reco_daughter_allShower_dirY"),
                                      "z" : self.events.io.Get("reco_daughter_allShower_dirZ")})
+            self.startPos = ak.zip({"x" : self.events.io.Get("reco_daughter_allShower_startX"),
+                                    "y" : self.events.io.Get("reco_daughter_allShower_startY"),
+                                    "z" : self.events.io.Get("reco_daughter_allShower_startZ")})
             self.energy = self.events.io.Get("reco_daughter_allShower_energy")
+            self.beam_number = self.events.io.Get("beamNum")
+            self.number = self.events.io.Get("reco_PFP_ID")
+            self.moter = self.events.io.Get("reco_PFP_Mother")
 
 
-    def Filter(self, filters : list) -> RecoParticles:
+    def Filter(self, filters : list):
         """Filter reconstructed data.
 
         Args:
@@ -239,10 +277,12 @@ class RecoParticles:
         filtered = RecoParticles(self.events)
         filtered.nHits = self.nHits
         filtered.direction = self.direction
-        self.energy = self.energy
+        filtered.startPos = self.startPos
+        filtered.energy = self.energy
         for f in filters:
             filtered.nHits = filtered.nHits[f]
             filtered.direction = filtered.direction[f]
+            filtered.startPos = filtered.startPos[f]
             filtered.energy = filtered.energy[f]
         return filtered
 
@@ -306,7 +346,7 @@ class RecoParticles:
 
 
 
-def Pi0MCFilter(events : Event, daughters : int = None) -> tuple[ak.Array, ak.Array]:
+def Pi0MCFilter(events : Event, daughters : int = None):
     """A filter for Pi0 MC dataset, selects events with a specific number of daughters
        and masks events where the direction has a null value -999. also returns indices
        of true photons to use when matching MC to reco.
@@ -327,7 +367,7 @@ def Pi0MCFilter(events : Event, daughters : int = None) -> tuple[ak.Array, ak.Ar
         r_mask = nDaughter == daughters
     
     photons = events.trueParticles.mother == 1 # get only primary daughters
-    photons = events.trueParticles.pdg == 22 # get only photons
+    photons = np.logical_and(photons, events.trueParticles.pdg == 22)
     t_mask = ak.num(photons[photons], -1) == 2 # exclude pi0 -> e+ + e- + photons
 
     valid = np.logical_and(r_mask, t_mask) # events which have 2 reco daughters and correct pi0 decay
