@@ -85,3 +85,16 @@ def angle(a : ak.Record, b : ak.Record) -> ak.Array:
         ak.Array: angle between a and b
     """
     return np.arccos(dot(a, b) / (magntiude(a) * magntiude(b)))
+
+
+def dist(a : ak.Record, b : ak.Record):
+    """Compute cartesian distance between two vectors
+
+    Args:
+        a (ak.Record created by vector): a vector
+        b (ak.Record created by vector): another vector
+
+    Returns:
+        ak.Array: distance between a and b
+    """
+    return magntiude(ak.zip({"x": a.x - b.x, "y": a.y - b.y, "z": a.z - b.z}))
