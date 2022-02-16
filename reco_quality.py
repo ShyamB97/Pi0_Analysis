@@ -8,14 +8,14 @@ Description: compare recontructed MC to MC truth.
 import os
 import awkward as ak
 import time
-import Plots
 import numpy as np
+# custom modules
+import Plots
 import Master
 import vector
 
-
 @Master.timer
-def MCTruth(sortEnergy) -> tuple[ak.Array, ak.Array, ak.Array, ak.Array, ak.Array]:
+def MCTruth(sortEnergy, photons):
     """Calculate true shower pair quantities.
 
     Args:
@@ -28,11 +28,11 @@ def MCTruth(sortEnergy) -> tuple[ak.Array, ak.Array, ak.Array, ak.Array, ak.Arra
     mask_pi0 = np.logical_and(events.trueParticles.number == 1, events.trueParticles.pdg == 111)
 
     #* get pi0 -> two photons only
-    mask_daughters = ak.all(events.trueParticles.pdg != 11, axis=1)
-    mask_daughters = np.logical_and(events.trueParticles.mother == 1, mask_daughters)
+    #mask_daughters = ak.all(events.trueParticles.pdg != 11, axis=1)
+    #mask_daughters = np.logical_and(events.trueParticles.mother == 1, mask_daughters)
 
     #* compute start momentum of dauhters
-    p_daughter = events.trueParticles.momentum[mask_daughters]
+    p_daughter = events.trueParticles.momentum[photons]
     sum_p = ak.sum(p_daughter, axis=1)
     sum_p = vector.magntiude(sum_p)
     p_daughter_mag = vector.magntiude(p_daughter)
@@ -42,7 +42,7 @@ def MCTruth(sortEnergy) -> tuple[ak.Array, ak.Array, ak.Array, ak.Array, ak.Arra
     angle = np.arccos(vector.dot(p_daughter[:, 1:], p_daughter[:, :-1]) / (p_daughter_mag[:, 1:] * p_daughter_mag[:, :-1]))
 
     #* compute invariant mass
-    e_daughter = events.trueParticles.energy[mask_daughters]
+    e_daughter = events.trueParticles.energy[photons]
     inv_mass = (2 * e_daughter[:, 1:] * e_daughter[:, :-1] * (1 - np.cos(angle)))**0.5
 
     #* pi0 momentum
@@ -51,7 +51,7 @@ def MCTruth(sortEnergy) -> tuple[ak.Array, ak.Array, ak.Array, ak.Array, ak.Arra
     return inv_mass, angle, p_daughter_mag[:, 1:], p_daughter_mag[:, :-1], p_pi0
 
 @Master.timer
-def RecoMC(sortEnergy) -> tuple[ak.Array, ak.Array, ak.Array, ak.Array, ak.Array, ak.Array]:
+def RecoMC(sortEnergy):
     """Calculate reconstructed shower pair quantities.
 
     Args:
@@ -116,8 +116,8 @@ def RecoMC(sortEnergy) -> tuple[ak.Array, ak.Array, ak.Array, ak.Array, ak.Array
     return inv_mass, angle, leading, secondary, pi0_momentum, ak.unflatten(null, 1, 0)
 
 
-def Error(reco, true, null) -> tuple[np.array, np.array, np.array]:
-    """Calcuate error, filter null data and format data for plotting.
+def Error(reco, true, null):
+    """Calcuate fractional error, filter null data and format data for plotting.
 
     Args:
         reco (ak.array): reconstructed quantity
@@ -132,7 +132,7 @@ def Error(reco, true, null) -> tuple[np.array, np.array, np.array]:
     reco = ak.flatten(reco, 1)[null]
     print(f"reco pairs: {len(reco)}")
     print(f"true pairs: {len(true)}")
-    error = reco - true
+    error = (reco / true) - 1
     return ak.to_numpy(ak.ravel(error)), ak.to_numpy(ak.ravel(reco)), ak.to_numpy(ak.ravel(true))
 
 
@@ -157,52 +157,65 @@ def PlotSingle(data, ranges, labels, bins, subDirectory, names, save):
         if save is True: Plots.Save(names[i], subDirectory)
 
 
-def PlotReco(reco):
+def PlotReco(reco, labels, names):
     """Plot reconstructed quantities.
 
     Args:
         reco (np.array): numpy array of reconstructed quantities.
     """
+    reco[reco == -999] = None
+    outDirReco = outDir + "reco/"
+    if save is True: os.makedirs(outDirReco, exist_ok=True)
+    
     Plots.PlotBar(ak.to_numpy(nDaughters), xlabel="Number of reconstructed daughter objects per event")
     if save is True: Plots.Save("nDaughters", outDir)
     #Plots.PlotHist(total_energy/1000, bins, "Sum shower energy (GeV))")
     #if save is True: Plots.Save("sum_energy", outDir)
-    outDirReco = outDir + "reco/"
-    reco[reco == -999] = None
-    if save is True: os.makedirs(outDirReco, exist_ok=True)
-    Plots.PlotHist(reco[2], bins, "Leading shower energy (GeV)")
-    if save is True: Plots.Save("leading_energy", outDirReco)
-    Plots.PlotHist(reco[3], bins, "Subleading shower energy (GeV)")
-    if save is True: Plots.Save("subleading_energy", outDirReco)
-    Plots.PlotHist(reco[1], bins, "Opening angle (rad)")
-    if save is True: Plots.Save("angle", outDirReco)
-    Plots.PlotHist(reco[0], bins, "Invariant mass (GeV)")
-    if save is True: Plots.Save("mass", outDirReco)
-    Plots.PlotHist(reco[4], bins, "$\pi^{0}$ momentum (GeV)")
-    if save is True: Plots.Save("pi0_momentum", outDirReco)
+    for i in range(len(names)):
+        Plots.PlotHist(reco[i], bins , labels[i])
+        if save is True: Plots.Save(names[i], outDirReco)
 
 
-save = False
-outDir = "pi0_0p5GeV_100K/match_MC/quality/"
+def PlotTruth(truth, labels, names):
+    outDirTrue = outDir + "truths/"
+    truth[truth == -999] = None
+    new_bins = [np.linspace(0, ak.mean(truth[0])+0.1, bins, True), bins, bins, bins, np.linspace(0.4, ak.mean(truth[4])+0.1, bins, True)]
+
+    if save is True: os.makedirs(outDirTrue, exist_ok=True)
+
+    for i in range(len(names)):
+        Plots.PlotHist(truth[i], new_bins[i], labels[i])
+        if save is True: Plots.Save(names[i], outDirTrue)
+
+
+#* user parameters
+save = True
+outDir = "pi0_0p5GeV_100K/match_MC_all/"
 bins = 50
+
 s = time.time()
+#* load data
 events = Master.Event("ROOTFiles/pi0_0p5GeV_100K_5_7_21.root")
 
 nDaughters = ak.count(events.recoParticles.nHits, -1) # for plotting
 
 #* filter
-valid, photons = Master.Pi0MCFilter(events, 2)
+valid, photons = Master.Pi0MCFilter(events, None)
 
 shower_dir = events.recoParticles.direction[valid]
+print(f"Number of showers events: {ak.num(shower_dir, 0)}")
 photon_dir = vector.normalize(events.trueParticles.momentum)[photons][valid]
 
 showers, selection_mask = events.MatchMC(photon_dir, shower_dir)
 
 events = events.Filter([valid, showers, selection_mask], [valid, selection_mask])
 
+photons = photons[valid][selection_mask] #? move to TrueParticles static variables? 
+
 sort = events.SortByTrueEnergy()
 
-mct = MCTruth(sort)
+#* calculate quantities
+mct = MCTruth(sort, photons)
 rmc = RecoMC(sort)
 
 # keep track of events with no shower pairs
@@ -211,9 +224,11 @@ null = ak.num(null, 1) > 0
 
 # plot names and labels
 names = ["inv_mass", "angle", "lead_energy", "sub_energy", "pi0_mom"]
-x_l = ["True invariant mass (GeV)", "True opening angle (rad)", "True leading shower energy (GeV)", "True secondary shower energy (GeV)", "True $\pi^{0}$ momentum (GeV)"]
-y_l = ["Invariant mass error (GeV)", "Opening angle error (rad)", "Leading shower energy error (GeV)", "Secondary shower energy error (GeV)", "$\pi^{0}$ momentum error (GeV)"]
+t_l = ["True invariant mass (GeV)", "True opening angle (rad)", "True leading shower energy (GeV)", "True secondary shower energy (GeV)", "True $\pi^{0}$ momentum (GeV)"]
+e_l = ["Invariant mass fractional error (GeV)", "Opening angle fractional error (rad)", "Leading shower energy fractional error (GeV)", "Secondary shower energy fractional error (GeV)", "$\pi^{0}$ momentum fractional error (GeV)"]
+r_l = ["Invariant mass (GeV)", "Opening angle (rad)", "Leading shower energy (GeV)", "Subleading shower energy (GeV)", "$\pi^{0}$ momentum (GeV)"]
 
+#* compute errors
 error = []
 reco = []
 true = []
@@ -228,26 +243,19 @@ error = np.nan_to_num(error, nan=-999)
 reco = np.nan_to_num(reco, nan=-999)
 true = np.nan_to_num(true, nan=-999)
 
-x_r = [[-998, max(true[0])], [-998, max(true[1])], [-998, max(true[2])], [-998, max(true[3])], [-998, max(true[4])]]
-y_r = [[-998, max(error[0])], [-998, max(error[1])], [-998, max(error[2])], [-998, max(error[3])], [-998, max(error[4])]]
+t_r = [[-998, max(true[0])], [-998, max(true[1])], [-998, max(true[2])], [-998, max(true[3])], [-998, max(true[4])]]
+#e_r = [[-998, max(error[0])], [-998, max(error[1])], [-998, max(error[2])], [-998, max(error[3])], [-998, max(error[4])]]
+e_r = [[-1, 1]]*5 # plot bounds for fractional errors
 
-
+#* make plots
 if save is True: os.makedirs(outDir + "2D/", exist_ok=True)
 for j in range(len(error)):
     for i in range(len(true)):
-        Plots.PlotHist2D(true[i], error[j], bins, x_range=x_r[i], y_range=y_r[j], xlabel=x_l[i], ylabel=y_l[j])
+        Plots.PlotHist2D(true[i], error[j], bins, x_range=t_r[i], y_range=e_r[j], xlabel=t_l[i], ylabel=e_l[j])
         if save is True: Plots.Save( names[j]+"_"+names[i] , outDir + "2D/")
 
+PlotSingle(error, e_r, e_l, bins, outDir + "fractional_errors/", names, save)
 
-#* Plot errors
-PlotSingle(error, y_r, y_l, bins, outDir + "errors/", names, save)
-
-Plots.PlotHist2D(true[2], error[2]/true[2], 50, y_range=[-999, 1], xlabel=x_l[2], ylabel="Leading energy fractional error")
-if save is True: Plots.Save( "fractional_leading" , outDir + "2D/")
-Plots.PlotHist2D(true[3], error[3]/true[3], 50, y_range=[-999, 1], xlabel=x_l[3],ylabel="Secondary energy fractional error")
-if save is True: Plots.Save( "fractional_subleading" , outDir + "2D/")
-
-PlotReco(reco)
-
-PlotSingle(true, x_r, x_l, bins, outDir + "truths/", names, save)
+PlotReco(reco, r_l, names)
+PlotTruth(true, t_l, names)
 print(f'time taken: {(time.time()-s):.4f}' )
