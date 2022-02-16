@@ -41,7 +41,7 @@ def Plot(x, y, xlabel="", ylabel="", title="", label="", marker="", newFigure=Tr
     plt.tight_layout()
 
 
-def PlotHist(data, bins=100, xlabel="", title="", label="", alpha=1, sf=2, density=False, newFigure=True):
+def PlotHist(data, bins=100, xlabel="", title="", label="", alpha=1, histtype="bar", sf=2, density=False, newFigure=True):
     """
     Plot histogram of data and axes including bin width.
     ----- Parameters -----
@@ -50,9 +50,13 @@ def PlotHist(data, bins=100, xlabel="", title="", label="", alpha=1, sf=2, densi
     ----------------------
     """
     if newFigure is True: plt.figure()
-    height, edges, _ = plt.hist(data, bins, label=label, alpha=alpha, density=density)
+    height, edges, _ = plt.hist(data, bins, label=label, alpha=alpha, density=density, histtype=histtype)
     binWidth = round((edges[-1] - edges[0]) / len(edges), sf)
-    plt.ylabel("Number of events (bin width=" + str(binWidth) + ")")
+    if density == False:
+        yl = "Number of events (bin width=" + str(binWidth) + ")"
+    else:
+        yl = "Normalized number of events (bin width=" + str(binWidth) + ")"
+    plt.ylabel(yl)
     plt.xlabel(xlabel)
     plt.title(title)
     if label != "": plt.legend()
@@ -92,7 +96,7 @@ def PlotHist2D(data_x, data_y, bins=100, x_range=[], y_range=[], xlabel="", ylab
     plt.tight_layout()
 
 
-def PlotHistComparison(data_1, data_2, bins=100, xlabel="", title="", label_1="", label_2="", alpha=1, sf=2, density=False, newFigure=True):
+def PlotHistComparison(data_1, data_2, bins=100, xlabel="", title="", label_1="", label_2="", alpha=1, histtype="bar", sf=2, density=False, newFigure=True):
     """
     Plot two histograms on the same axes, plots larger set first based on the provided bin numbers.
     ----- Parameters -----
@@ -124,11 +128,15 @@ def PlotHistComparison(data_1, data_2, bins=100, xlabel="", title="", label_1=""
        c_1 = c_2
        c_2 = tmp
 
-    height_1, edges, _ = plt.hist(data_1, bins, label=label_1, alpha=alpha, density=density, color=c_1)
-    height_2, _, _ = plt.hist(data_2, edges, label=label_2, alpha=alpha, density=density, color=c_2)
+    height_1, edges, _ = plt.hist(data_1, bins, label=label_1, alpha=alpha, histtype=histtype, density=density, color=c_1)
+    height_2, _, _ = plt.hist(data_2, edges, label=label_2, alpha=alpha, histtype=histtype, density=density, color=c_2)
 
     binWidth = round((edges[-1] - edges[0]) / len(edges), sf)
-    plt.ylabel("Number of events (bin width=" + str(binWidth) + ")")
+    if density == False:
+        yl = "Number of events (bin width=" + str(binWidth) + ")"
+    else:
+        yl = "Normalized number of events (bin width=" + str(binWidth) + ")"
+    plt.ylabel(yl)
     plt.xlabel(xlabel)
     plt.title(title)
     plt.legend()
