@@ -186,7 +186,7 @@ class TrueParticles:
     #? do something with leaves?
     def __init__(self, events : Event) -> None:
         self.events = events # parent of TrueParticles
-        if self.events.io != None:
+        if hasattr(self.events, "io"):
             self.number = self.events.io.Get("g4_num")
             self.mother = self.events.io.Get("g4_mother")
             self.pdg = self.events.io.Get("g4_Pdg")
@@ -212,7 +212,7 @@ class TrueParticles:
         Returns:
             TrueParticles: filtered data.
         """
-        filtered = TrueParticles(self.events)
+        filtered = TrueParticles(Event())
         filtered.number = self.number
         filtered.mother = self.mother
         filtered.pdg = self.pdg
@@ -251,7 +251,8 @@ class RecoParticles:
 
     def __init__(self, events : Event) -> None:
         self.events = events # parent of RecoParticles
-        if self.events.io != None:
+        print(events.filename)
+        if hasattr(self.events, "io"):
             self.nHits = self.events.io.Get("reco_daughter_PFP_nHits_collection")
             self.direction = ak.zip({"x" : self.events.io.Get("reco_daughter_allShower_dirX"),
                                      "y" : self.events.io.Get("reco_daughter_allShower_dirY"),
@@ -274,7 +275,7 @@ class RecoParticles:
         Returns:
             RecoParticles: filtered data.
         """
-        filtered = RecoParticles(self.events)
+        filtered = RecoParticles(Event())
         filtered.nHits = self.nHits
         filtered.direction = self.direction
         filtered.startPos = self.startPos
