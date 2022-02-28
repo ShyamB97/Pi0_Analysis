@@ -98,3 +98,16 @@ def dist(a : ak.Record, b : ak.Record):
         ak.Array: distance between a and b
     """
     return magntiude(ak.zip({"x": a.x - b.x, "y": a.y - b.y, "z": a.z - b.z}))
+
+
+def Add(a : ak.Record, b : ak.Record):
+    """Compute vector addition of two vectors
+
+    Args:
+        a (ak.Record created by vector): a vector
+        b (ak.Record created by vector): another vector
+
+    Returns:
+        ak.Array: distance between a and b
+    """
+    return ak.zip({"x": a.x + b.x, "y": a.y + b.y, "z": a.z + b.z})
