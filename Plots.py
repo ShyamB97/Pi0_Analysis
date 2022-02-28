@@ -86,7 +86,7 @@ def PlotHist2D(data_x, data_y, bins=100, x_range=[], y_range=[], xlabel="", ylab
         data_y = data_y[data_y <= y_range[1]]
 
     # plot data with a logarithmic color scale
-    plt.hist2d(data_x, data_y, bins, norm=matplotlib.colors.LogNorm(), label=label)
+    height, xedges, yedges, _ = plt.hist2d(data_x, data_y, bins, norm=matplotlib.colors.LogNorm(), label=label)
     plt.colorbar()
 
     plt.xlabel(xlabel)
@@ -94,6 +94,7 @@ def PlotHist2D(data_x, data_y, bins=100, x_range=[], y_range=[], xlabel="", ylab
     plt.title(title)
     if label != "": plt.legend()
     plt.tight_layout()
+    return height, [xedges, yedges]
 
 
 def PlotHistComparison(data_1, data_2, bins=100, xlabel="", title="", label_1="", label_2="", alpha=1, histtype="bar", sf=2, density=False, newFigure=True):
