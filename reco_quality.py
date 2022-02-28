@@ -51,7 +51,7 @@ def MCTruth(sortEnergy, photons):
     return inv_mass, angle, p_daughter_mag[:, 1:], p_daughter_mag[:, :-1], p_pi0
 
 @Master.timer
-def RecoMC(sortEnergy):
+def RecoQauntities(sortEnergy):
     """Calculate reconstructed shower pair quantities.
 
     Args:
@@ -189,7 +189,7 @@ def PlotTruth(truth, labels, names):
 
 
 #* user parameters
-save = True
+save = False
 outDir = "pi0_0p5GeV_100K/match_MC_all/"
 bins = 50
 
@@ -206,7 +206,7 @@ shower_dir = events.recoParticles.direction[valid]
 print(f"Number of showers events: {ak.num(shower_dir, 0)}")
 photon_dir = vector.normalize(events.trueParticles.momentum)[photons][valid]
 
-showers, selection_mask = events.MatchMC(photon_dir, shower_dir)
+showers, _, selection_mask = events.MatchMC(photon_dir, shower_dir)
 
 events = events.Filter([valid, showers, selection_mask], [valid, selection_mask])
 
@@ -216,7 +216,7 @@ sort = events.SortByTrueEnergy()
 
 #* calculate quantities
 mct = MCTruth(sort, photons)
-rmc = RecoMC(sort)
+rmc = RecoQauntities(sort)
 
 # keep track of events with no shower pairs
 null = ak.flatten(rmc[-1], -1)

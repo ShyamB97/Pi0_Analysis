@@ -6,12 +6,15 @@ Author: Shyam Bhuller
 Description: Module containing core components of analysis code. 
 """
 
+import warnings
 import uproot
 import awkward as ak
 import time
-import vector
 import numpy as np
 import itertools
+# custom modules
+import vector
+
 
 def timer(func):
     """Decorator which times a function.
@@ -122,7 +125,9 @@ class Event:
 
         Returns:
             ak.Array: shower indices in order of true photon number
+            ak.Array: boolean mask of showers not matched
             ak.Array: mask which indicates which pi0 decays are "good"
+            ak.Array (optional): minimum angle between showers and each true photon
         """
         # angle of all reco showers wrt to each true photon per event i.e. error
         angle_error_0 = vector.angle(shower_dir, photon_dir[:, 0])
@@ -133,6 +138,11 @@ class Event:
         m_1 = ak.unflatten(ak.min(angle_error_1, -1), 1)
         angles = ak.concatenate([m_0, m_1], -1)
 
+        # make boolean mask of showers that aren't matched
+        t_0 = ak.min(angle_error_0, -1) != angle_error_0
+        t_1 = ak.min(angle_error_1, -1) != angle_error_1
+        unmatched_mask = np.logical_and(t_0, t_1)
+
         # get shower which had the smallest angle
         #NOTE reco showers are now sorted by true photon number essentially. 
         m_0 = ak.unflatten(ak.argmin(angle_error_0, -1), 1)
@@ -140,16 +150,16 @@ class Event:
         showers = ak.concatenate([m_0, m_1], -1)
 
         # get events where both reco MC angles are less than 0.25 radians
-        mask = np.logical_and(angles[:, 0] < cut, angles[:, 1] < cut)
+        selection = np.logical_and(angles[:, 0] < cut, angles[:, 1] < cut)
 
         # check how many showers had the same reco match to both true particles
-        same_match = showers[:, 0][mask] == showers[:, 1][mask]
+        same_match = showers[:, 0][selection] == showers[:, 1][selection]
         print(f"number of events where both photons match to the same shower: {ak.count(ak.mask(same_match, same_match) )}")
 
         if returnAngles is True:
-            return showers, mask, angles
+            return showers, unmatched_mask, selection, angles
         else:
-            return showers, mask
+            return showers, unmatched_mask, selection
     
     @timer
     def Filter(self, reco_filters : list = [], true_filters : list = []):
@@ -222,14 +232,12 @@ class TrueParticles:
         filtered.startPos = self.startPos
         filtered.endPos = self.endPos
         for f in filters:
-            filtered.number = filtered.number[f]
-            filtered.mother = filtered.mother[f]
-            filtered.pdg = filtered.pdg[f]
-            filtered.energy = filtered.energy[f]
-            filtered.momentum = filtered.momentum[f]
-            filtered.direction = filtered.direction[f]
-            filtered.startPos = filtered.startPos[f]
-            filtered.endPos = filtered.endPos[f]
+            for var in vars(filtered):
+                if hasattr(getattr(filtered, var), "__getitem__"):
+                    try:
+                        setattr(filtered, var, getattr(filtered, var)[f])
+                    except:
+                        warnings.warn(f"Couldn't apply filters to {var}.")
         return filtered
 
 
@@ -253,6 +261,9 @@ class RecoParticles:
         self.events = events # parent of RecoParticles
         print(events.filename)
         if hasattr(self.events, "io"):
+            self.beam_number = self.events.io.Get("beamNum")
+            self.number = self.events.io.Get("reco_PFP_ID")
+            self.mother = self.events.io.Get("reco_PFP_Mother")
             self.nHits = self.events.io.Get("reco_daughter_PFP_nHits_collection")
             self.direction = ak.zip({"x" : self.events.io.Get("reco_daughter_allShower_dirX"),
                                      "y" : self.events.io.Get("reco_daughter_allShower_dirY"),
@@ -261,9 +272,13 @@ class RecoParticles:
                                     "y" : self.events.io.Get("reco_daughter_allShower_startY"),
                                     "z" : self.events.io.Get("reco_daughter_allShower_startZ")})
             self.energy = self.events.io.Get("reco_daughter_allShower_energy")
-            self.beam_number = self.events.io.Get("beamNum")
-            self.number = self.events.io.Get("reco_PFP_ID")
-            self.mother = self.events.io.Get("reco_PFP_Mother")
+            self.momentum = self.GetMomentum()
+
+    def GetMomentum(self):
+        mom = vector.prod(self.energy, self.direction)
+        mom = ak.where(self.direction.x == -999, {"x": -999,"y": -999,"z": -999}, mom)
+        mom = ak.where(self.energy < 0, {"x": -999,"y": -999,"z": -999}, mom)
+        return mom
 
 
     def Filter(self, filters : list):
@@ -280,11 +295,14 @@ class RecoParticles:
         filtered.direction = self.direction
         filtered.startPos = self.startPos
         filtered.energy = self.energy
+        filtered.momentum = self.momentum
         for f in filters:
-            filtered.nHits = filtered.nHits[f]
-            filtered.direction = filtered.direction[f]
-            filtered.startPos = filtered.startPos[f]
-            filtered.energy = filtered.energy[f]
+            for var in vars(filtered):
+                if hasattr(getattr(filtered, var), "__getitem__"):
+                    try:
+                        setattr(filtered, var, getattr(filtered, var)[f])
+                    except:
+                        warnings.warn(f"Couldn't apply filters to {var}.")
         return filtered
 
     @timer
@@ -346,7 +364,6 @@ class RecoParticles:
         return ak.to_list(pairs)
 
 
-
 def Pi0MCFilter(events : Event, daughters : int = None):
     """A filter for Pi0 MC dataset, selects events with a specific number of daughters
        and masks events where the direction has a null value -999. also returns indices
@@ -364,6 +381,8 @@ def Pi0MCFilter(events : Event, daughters : int = None):
     
     if daughters == None:
         r_mask = nDaughter > 1
+    elif daughters < 0:
+        r_mask = nDaughter > abs(daughters)
     else:
         r_mask = nDaughter == daughters
     
@@ -378,3 +397,107 @@ def Pi0MCFilter(events : Event, daughters : int = None):
     valid = np.logical_and(valid, np.logical_not(null))
     #? can we do without returning photons?
     return valid, photons
+
+@timer
+def MCTruth(events : Event, sortEnergy : ak.Array, photons : ak.Array):
+    """Calculate true shower pair quantities.
+
+    Args:
+        events (Master.Event): events to process
+        sortEnergy (ak.Array): mask to sort shower pairs by true energy
+        photons (ak.Array): mask of photons in MC truth
+
+    Returns:
+        tuple of ak.Array: calculated quantities
+    """
+    #* get the primary pi0
+    mask_pi0 = np.logical_and(events.trueParticles.number == 1, events.trueParticles.pdg == 111)
+
+    #* compute start momentum of dauhters
+    p_daughter = events.trueParticles.momentum[photons]
+    sum_p = ak.sum(p_daughter, axis=1)
+    sum_p = vector.magntiude(sum_p)
+    p_daughter_mag = vector.magntiude(p_daughter)
+    p_daughter_mag = p_daughter_mag[sortEnergy]
+
+    #* compute true opening angle
+    angle = np.arccos(vector.dot(p_daughter[:, 1:], p_daughter[:, :-1]) / (p_daughter_mag[:, 1:] * p_daughter_mag[:, :-1]))
+
+    #* compute invariant mass
+    e_daughter = events.trueParticles.energy[photons]
+    inv_mass = (2 * e_daughter[:, 1:] * e_daughter[:, :-1] * (1 - np.cos(angle)))**0.5
+
+    #* pi0 momentum
+    p_pi0 = events.trueParticles.momentum[mask_pi0]
+    p_pi0 = vector.magntiude(p_pi0)
+    return inv_mass, angle, p_daughter_mag[:, 1:], p_daughter_mag[:, :-1], p_pi0
+
+@timer
+def RecoQuantities(events : Event, sortEnergy : ak.Array):
+    """Calculate reconstructed shower pair quantities.
+
+    Args:
+        events(Master.Event): events to process
+        sortEnergy (ak.Array): mask to sort shower pairs by true energy
+
+    Returns:
+        tuple of ak.Array: calculated quantities + array which masks null shower pairs
+    """
+    sortedPairs = ak.unflatten(events.recoParticles.energy[sortEnergy], 1, 0)
+    leading = sortedPairs[:, :, 1:]
+    secondary = sortedPairs[:, :, :-1]
+
+    #* opening angle
+    direction_pair = ak.unflatten(events.recoParticles.direction[sortEnergy], 1, 0)
+    direction_pair_mag = vector.magntiude(direction_pair)
+    angle = np.arccos(vector.dot(direction_pair[:, :, 1:], direction_pair[:, :, :-1]) / (direction_pair_mag[:, :, 1:] * direction_pair_mag[:, :, :-1]))
+
+    #* Invariant Mass
+    inv_mass = (2 * leading * secondary * (1 - np.cos(angle)))**0.5
+
+    #* pi0 momentum
+    pi0_momentum = vector.magntiude(ak.sum(events.recoParticles.momentum, axis=-1))/1000
+
+    null_dir = np.logical_or(direction_pair[:, :, 1:].x == -999, direction_pair[:, :, :-1].x == -999) # mask shower pairs with invalid direction vectors
+    null = np.logical_or(leading < 0, secondary < 0) # mask of shower pairs with invalid energy
+    
+    #* filter null data
+    pi0_momentum = np.where(null_dir, -999, pi0_momentum)
+    pi0_momentum = np.where(null, -999, pi0_momentum)
+
+    leading = leading/1000
+    secondary = secondary/1000
+
+    leading = np.where(null, -999, leading)
+    leading = np.where(null_dir, -999, leading)
+    secondary = np.where(null, -999, secondary)
+    secondary = np.where(null_dir, -999, secondary)
+
+    angle = np.where(null, -999, angle)
+    angle = np.where(null_dir, -999, angle)
+
+    inv_mass = inv_mass/1000
+    inv_mass = np.where(null, -999, inv_mass)
+    inv_mass = np.where(null_dir, -999, inv_mass)
+
+    return inv_mass, angle, leading, secondary, pi0_momentum, ak.unflatten(null, 1, 0)
+
+@timer
+def Error(reco : ak.Array, true : ak.Array, null : ak.Array):
+    """Calcuate fractional error, filter null data and format data for plotting.
+
+    Args:
+        reco (ak.Array): reconstructed quantity
+        true (ak.Array): true quantity
+        null (ak.Array): mask for events without shower pairs, reco direction or energy
+
+    Returns:
+        tuple of np.array: flattened numpy array of errors, reco and truth
+    """
+    true = true[null]
+    true = ak.where( ak.num(true, 1) > 0, true, [np.nan]*len(true) )
+    reco = ak.flatten(reco, 1)[null]
+    print(f"reco pairs: {len(reco)}")
+    print(f"true pairs: {len(true)}")
+    error = (reco / true) - 1
+    return ak.to_numpy(ak.ravel(error)), ak.to_numpy(ak.ravel(reco)), ak.to_numpy(ak.ravel(true))
