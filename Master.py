@@ -161,7 +161,7 @@ class Event:
         else:
             return showers, unmatched_mask, selection
     
-    @timer
+
     def Filter(self, reco_filters : list = [], true_filters : list = []):
         """Filter events.
 
@@ -482,7 +482,7 @@ def RecoQuantities(events : Event, sortEnergy : ak.Array):
 
     return inv_mass, angle, leading, secondary, pi0_momentum, ak.unflatten(null, 1, 0)
 
-@timer
+
 def Error(reco : ak.Array, true : ak.Array, null : ak.Array):
     """Calcuate fractional error, filter null data and format data for plotting.
 

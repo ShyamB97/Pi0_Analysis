@@ -5,6 +5,7 @@ Author: Shyam Bhuller
 
 Description: A script studying pi0 decay geometry and shower merging.
 """
+import argparse
 import os
 import awkward as ak
 import time
@@ -189,6 +190,7 @@ def mergeShower(events : Master.Event, matched : ak.Array, unmatched : ak.Array,
         energyToMerge = ak.where(events_matched.recoParticles.energy != -999, energyToMerge, 0) # ensure when mergeing we ignore matched showers with undefined energy
         energyToMerge = ak.where(energyToMerge != -999, energyToMerge, 0) # ensure when mergeing we ignore unmatched showers with undefined energy
         events_matched.recoParticles.energy = events_matched.recoParticles.energy + energyToMerge # merge energies
+        events_matched.recoParticles.momentum = vector.prod(events_matched.recoParticles.energy, events_matched.recoParticles.direction)
     else:
         new_energy = vector.magntiude(events_matched.recoParticles.momentum)
         events_matched.recoParticles.energy = ak.where(events_matched.recoParticles.momentum.x != -999, new_energy, -999)
@@ -197,7 +199,16 @@ def mergeShower(events : Master.Event, matched : ak.Array, unmatched : ak.Array,
  
 @Master.timer
 def CalculateQuantities(events : Master.Event, photons : ak.Array, names : str):
+    """Calcaulte reco/ true quantities of shower pairs, and format them for plotting
 
+    Args:
+        events (Master.Event): events to look at
+        photons (ak.Array): mask which gets true photons
+        names (str): quantity names
+
+    Returns:
+        tuple of np.arrays: quantities to plot
+    """
     mct = Master.MCTruth(events, events.SortByTrueEnergy(), photons)
     rmc = Master.RecoQuantities(events, events.SortByTrueEnergy())
 
@@ -221,14 +232,25 @@ def CalculateQuantities(events : Master.Event, photons : ak.Array, names : str):
     return true, reco, error
 
 
-def CreateFilteredEvents(events : Master.Event, nDaughters=None):
+def CreateFilteredEvents(events : Master.Event, nDaughters : int = None):
+    """Filter events with specific number of daughters, then match the showers to
+       MC truth.
+
+    Args:
+        events (Master.Event): events to study
+        nDaughters (int, optional): filter events with ndaughters. Defaults to None.
+
+    Returns:
+        Master.Event: events after filering
+        ak.Array: true photon mask 
+    """
     valid, photons = Master.Pi0MCFilter(events, nDaughters)
 
     shower_dir = events.recoParticles.direction[valid]
     print(f"Number of showers events: {ak.num(shower_dir, 0)}")
     photon_dir = vector.normalize(events.trueParticles.momentum)[photons][valid]
 
-    showers, _, selection_mask, angles = events.MatchMC(photon_dir, shower_dir, returnAngles=True)
+    showers, _, selection_mask = events.MatchMC(photon_dir, shower_dir, returnAngles=False)
 
     reco_filters = [valid, showers, selection_mask]
     true_filters = [valid, selection_mask]
@@ -236,59 +258,87 @@ def CreateFilteredEvents(events : Master.Event, nDaughters=None):
     return events.Filter(reco_filters, true_filters), photons[valid][selection_mask]
 
 
-def AnalyseQuantities():
-    if save is True: os.makedirs(outDir + "reco/", exist_ok=True)
+def AnalyseQuantities(truths : np.array, recos : np.array, errors : np.array, labels : list, directory : str):
+    """Plot calculated quantities for given events
+
+    Args:
+        truths (np.array): true quantities
+        recos (np.array): reconstruced quantities
+        errors (np.array): fractional errors
+        labels (list): plot labels for different event types
+        directory (str): output directory
+    """
+    if save is True: os.makedirs(directory + "reco/", exist_ok=True)
     l_loc = ["right", "right", "left", "right", "left"]
     for j in range(len(names)):
         plt.figure()
-        for i in range(len(f_l)):
-            data = rs[i][j]
+        for i in range(len(labels)):
+            data = recos[i][j]
             data = data[data > -900]
             if i == 0:
-                _, edges = Plots.PlotHist(data, bins=bins, xlabel=r_l[j], histtype="step", newFigure=False, label=f_l[i], density=True)
+                _, edges = Plots.PlotHist(data, bins=bins, xlabel=r_l[j], histtype="step", newFigure=False, label=labels[i], density=True)
             else:
-                Plots.PlotHist(data, bins=edges, xlabel=r_l[j], histtype="step", newFigure=False, label=f_l[i], density=True)
+                Plots.PlotHist(data, bins=edges, xlabel=r_l[j], histtype="step", newFigure=False, label=labels[i], density=True)
         plt.legend(loc=f"upper {l_loc[j]}", fontsize="small")
-        if save is True: Plots.Save( names[j] , outDir + "reco/")
+        if save is True: Plots.Save( names[j] , directory + "reco/")
 
-    if save is True: os.makedirs(outDir + "fractional_error/", exist_ok=True)
+    if save is True: os.makedirs(directory + "fractional_error/", exist_ok=True)
     l_loc = ["left", "left", "left", "right", "left"]
     for j in range(len(names)):
         plt.figure()
-        for i in range(len(f_l)):
-            data = es[i][j]
+        for i in range(len(labels)):
+            data = errors[i][j]
             data = data[data > fe_range[0]]
             data = data[data < fe_range[1]]
             if i == 0:
-                _, edges = Plots.PlotHist(data, bins=bins, xlabel=e_l[j], histtype="step", newFigure=False, label=f_l[i], density=True)
+                _, edges = Plots.PlotHist(data, bins=bins, xlabel=e_l[j], histtype="step", newFigure=False, label=labels[i], density=True)
             else:
-                Plots.PlotHist(data, bins=edges, xlabel=e_l[j], histtype="step", newFigure=False, label=f_l[i], density=True)
+                Plots.PlotHist(data, bins=edges, xlabel=e_l[j], histtype="step", newFigure=False, label=labels[i], density=True)
         plt.legend(loc=f"upper {l_loc[j]}", fontsize="small")
-        if save is True: Plots.Save( names[j] , outDir + "fractional_error/")
+        if save is True: Plots.Save( names[j] , directory + "fractional_error/")
 
-    if save is True: os.makedirs(outDir + "2D/", exist_ok=True)
+    if save is True: os.makedirs(directory + "2D/", exist_ok=True)
     plt.rcParams["figure.figsize"] = (6.4*2,4.8*2)
     for j in range(len(names)):
         plt.figure()
-        for i in range(len(f_l)):
+        for i in range(len(labels)):
             plt.subplot(2, 2, i+1)
             if i == 0:
-                _, edges = Plots.PlotHist2D(ts[i][j], es[i][j], bins, y_range=fe_range, xlabel=t_l[j], ylabel=e_l[j], title=f_l[i], newFigure=False)
+                _, edges = Plots.PlotHist2D(truths[i][j], errors[i][j], bins, y_range=fe_range, xlabel=t_l[j], ylabel=e_l[j], title=labels[i], newFigure=False)
             else:
-                Plots.PlotHist2D(ts[i][j], es[i][j], edges, y_range=fe_range, xlabel=t_l[j], ylabel=e_l[j], title=f_l[i], newFigure=False)
-        if save is True: Plots.Save( names[j] , outDir + "2D/")
+                Plots.PlotHist2D(truths[i][j], errors[i][j], edges, y_range=fe_range, xlabel=t_l[j], ylabel=e_l[j], title=labels[i], newFigure=False)
+        if save is True: Plots.Save( names[j] , directory + "2D/")
     plt.rcParams["figure.figsize"] = plt.rcParamsDefault["figure.figsize"]
 
 
-def Plot2DTest(ind):
+def Plot2DTest(ind, truths, errors):
+    # hists = []
+    # h0, xedges, yedges = np.histogram2d(ts[0][2], es[0][2], bins=bins, range=[[min(ts[0][2]), max(es[0][2])], fe_range], density=True)
+    # plt.figure()
+    # for i in range(len(f_l)):
+    #     x = ts[i][2]
+    #     y = es[i][2]
+    #     x_range = [min(x), max(x)]
+    #     h, _, _ = np.histogram2d(x, y, bins=[xedges, yedges], range=[x_range, fe_range], density=True)
+    #     h = np.ravel(np.nan_to_num(h / h0, posinf=0, neginf=0))
+    #     h = h[h != 0]
+    #     hists.append(h)
+
+    # hists.reverse()
+    # f_l.reverse()
+    # for i in range(len(f_l)-1):
+    #     if i == 0:
+    #         _, edges = Plots.PlotHist(hists[i], bins=50, xlabel="bin height ratio wrt 2 shower sample", histtype="step", density=False, newFigure=False, label=f_l[i])
+    #     else:
+    #         Plots.PlotHist(hists[i], bins=edges, xlabel="bin height ratio wrt 2 shower sample", histtype="step", density=False, newFigure=False, label=f_l[i])
+
     fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(6.4*2,4.8*2))
 
     for i in range(len(axes.flat)):
-        x = ts[i][ind]
-        y = es[i][ind]
+        x = truths[i][ind]
+        y = errors[i][ind]
 
         if len(np.unique(x)) == 1:
-            print(len(np.unique(x)))
             x_range = [min(x)-0.01, max(x)+0.01]
         else:
             x_range = [min(x), max(x)]
@@ -299,7 +349,8 @@ def Plot2DTest(ind):
             #norm = matplotlib.colors.Normalize(0, 2)
             #norm = matplotlib.colors.Normalize(np.min(h0), np.max(h0))
             h0[h0==0] = np.nan
-            h0T = h0.T / h0.T
+            #h0T = h0.T / h0.T
+            h0T = h0.T
             im = axes.flat[i].imshow(np.flip(h0T, 0), extent=[x_range[0], x_range[1], fe_range[0], fe_range[1]], norm=matplotlib.colors.LogNorm())#, norm=norm, cmap=cmap)
             fig.colorbar(im, ax=axes.flat[i])
         else:
@@ -311,88 +362,106 @@ def Plot2DTest(ind):
         axes.flat[i].set_aspect("auto")
         axes.flat[i].set_title(f_l[i])
 
+    # add common x and y axis labels
     fig.add_subplot(1, 1, 1, frame_on=False)
     plt.tight_layout()
-
     # Hiding the axis ticks and tick labels of the bigger plot
     plt.tick_params(labelcolor="none", bottom=False, left=False)
-
     # Adding the x-axis and y-axis labels for the bigger plot
     plt.xlabel(t_l[2], fontsize=14)
     plt.ylabel(e_l[2], fontsize=14)
 
 
 #* user parameters
-save = False
-outDir = "pi0_0p5GeV_100K/shower_merge/"
-bins = 50
-s = time.time()
-events = Master.Event("ROOTFiles/pi0_0p5GeV_100K_5_7_21.root")
-events_2, photons_2 = CreateFilteredEvents(events, 2)
-valid, photons = Master.Pi0MCFilter(events, 3)
+@Master.timer
+def main():
+    s = time.time()
+    events = Master.Event(file)
+    events_2, photons_2 = CreateFilteredEvents(events, 2)
+    valid, photons = Master.Pi0MCFilter(events, 3)
 
-shower_dir = events.recoParticles.direction[valid]
-print(f"Number of showers events: {ak.num(shower_dir, 0)}")
-photon_dir = vector.normalize(events.trueParticles.momentum)[photons][valid]
+    shower_dir = events.recoParticles.direction[valid]
+    photon_dir = vector.normalize(events.trueParticles.momentum)[photons][valid]
 
-matched, unmatched, selection_mask = events.MatchMC(photon_dir, shower_dir)
+    matched, unmatched, selection_mask = events.MatchMC(photon_dir, shower_dir)
 
-events = events.Filter([valid, selection_mask], [valid, selection_mask]) # filter events based on MC matching
+    events = events.Filter([valid, selection_mask], [valid, selection_mask]) # filter events based on MC matching
 
-# filter masks
-matched = matched[selection_mask]
-unmatched = unmatched[selection_mask]
-photons = photons[valid][selection_mask]
+    # filter masks
+    matched = matched[selection_mask]
+    unmatched = unmatched[selection_mask]
+    photons = photons[valid][selection_mask]
 
-events_merged_a = mergeShower(events, matched, unmatched, 1, False)
-events_merged_s = mergeShower(events, matched, unmatched, 2, False)
-events_unmerged = events.Filter([matched])
+    events_merged_a_scalar = mergeShower(events, matched, unmatched, 1, True)
+    events_merged_s_scalar = mergeShower(events, matched, unmatched, 2, True)
+    events_merged_a_vector = mergeShower(events, matched, unmatched, 1, False)
+    events_merged_s_vector = mergeShower(events, matched, unmatched, 2, False)
+    events_unmerged = events.Filter([matched])
+
+    q_2 = CalculateQuantities(events_2, photons_2, names)
+    q = CalculateQuantities(events_unmerged, photons, names)
+    q_a_vector = CalculateQuantities(events_merged_a_vector, photons, names)
+    q_s_vector = CalculateQuantities(events_merged_s_vector, photons, names)
+    q_a_scalar = CalculateQuantities(events_merged_a_scalar, photons, names)
+    q_s_scalar = CalculateQuantities(events_merged_s_scalar, photons, names)
+
+    f_l_vector = [f_l[0], f_l[1], "angular", "spatial"]
+    ts_vector = [q_2[0], q[0], q_a_vector[0], q_s_vector[0]]
+    rs_vector = [q_2[1], q[1], q_a_vector[1], q_s_vector[1]]
+    es_vector = [q_2[2], q[2], q_a_vector[2], q_s_vector[2]]
+
+    f_l_scalar = [f_l[0], f_l[1], "angular", "spatial"]
+    ts_scalar = [q_2[0], q[0], q_a_scalar[0], q_s_scalar[0]]
+    rs_scalar = [q_2[1], q[1], q_a_scalar[1], q_s_scalar[1]]
+    es_scalar = [q_2[2], q[2], q_a_scalar[2], q_s_scalar[2]]
+
+    f_l_angle = [f_l[0], f_l[1], f_l[2], f_l[4]]
+    ts_angle = [q_2[0], q[0], q_a_scalar[0], q_a_vector[0]]
+    rs_angle = [q_2[1], q[1], q_a_scalar[1], q_a_vector[1]]
+    es_angle = [q_2[2], q[2], q_a_scalar[2], q_a_vector[2]]
+
+    f_l_dist = [f_l[0], f_l[1], f_l[3], f_l[5]]
+    ts_dist = [q_2[0], q[0], q_s_scalar[0], q_s_vector[0]]
+    rs_dist = [q_2[1], q[1], q_s_scalar[1], q_s_vector[1]]
+    es_dist = [q_2[2], q[2], q_s_scalar[2], q_s_vector[2]]
+
+    if study == "merge":
+        AnalyseQuantities(ts_scalar, rs_scalar, es_scalar, f_l_scalar, outDir+"merge_comp/")
+    if study == "energy":
+        AnalyseQuantities(ts_angle, rs_angle, es_angle, f_l_angle, outDir+"angle/")
+        AnalyseQuantities(ts_dist, rs_dist, es_dist, f_l_dist, outDir+"dist/")
+    if study == "separation":
+        AnalyzeReco(events, matched, unmatched)
+        AnalyzeTruth(events, photons)
+    if study == "test":
+        print("running test code...")
+        if save is True: os.makedirs(outDir + "2DTest/spatial/", exist_ok=True)
+        for i in range(len(names)):
+            Plot2DTest(i, ts_dist, es_dist)
+            if save is True: Plots.Save(names[i], outDir + "2DTest/spatial/")
 
 
-names = ["inv_mass", "angle", "lead_energy", "sub_energy", "pi0_mom"]
-t_l = ["True invariant mass (GeV)", "True opening angle (rad)", "True leading shower energy (GeV)", "True secondary shower energy (GeV)", "True $\pi^{0}$ momentum (GeV)"]
-e_l = ["Invariant mass fractional error (GeV)", "Opening angle fractional error (rad)", "Leading shower energy fractional error (GeV)", "Secondary shower energy fractional error (GeV)", "$\pi^{0}$ momentum fractional error (GeV)"]
-r_l = ["Invariant mass (GeV)", "Opening angle (rad)", "Leading shower energy (GeV)", "Subleading shower energy (GeV)", "$\pi^{0}$ momentum (GeV)"]
+if __name__ == "__main__":
 
-t_2, r_2, e_2 = CalculateQuantities(events_2, photons_2, names)
-t, r, e = CalculateQuantities(events_unmerged, photons, names)
-t_a, r_a, e_a = CalculateQuantities(events_merged_a, photons, names)
-t_s, r_s, e_s = CalculateQuantities(events_merged_s, photons, names)
+    names = ["inv_mass", "angle", "lead_energy", "sub_energy", "pi0_mom"]
+    t_l = ["True invariant mass (GeV)", "True opening angle (rad)", "True leading shower energy (GeV)", "True secondary shower energy (GeV)", "True $\pi^{0}$ momentum (GeV)"]
+    e_l = ["Invariant mass fractional error (GeV)", "Opening angle fractional error (rad)", "Leading shower energy fractional error (GeV)", "Secondary shower energy fractional error (GeV)", "$\pi^{0}$ momentum fractional error (GeV)"]
+    r_l = ["Invariant mass (GeV)", "Opening angle (rad)", "Leading shower energy (GeV)", "Subleading shower energy (GeV)", "$\pi^{0}$ momentum (GeV)"]
+    f_l = ["2 showers", "3 showers, unmerged", "angular vector sum", "spatial vector sum", "angular scalar sum", "spatial scalar sum"]
+    fe_range = [-1, 1]
 
+    parser = argparse.ArgumentParser(description="Study em shower merging for pi0 decays")
+    parser.add_argument("-f", "--file", dest="file", type=str, default="ROOTFiles/pi0_0p5GeV_100K_5_7_21.root", help="ROOT file to open.")
+    parser.add_argument("-b", "--nbins", dest="bins", type=int, default=50, help="number of bins when plotting histograms")
+    parser.add_argument("-s", "--save", dest="save", type=bool, default=False, help="whether to save the plots")
+    parser.add_argument("-d", "--directory", dest="outDir", type=str, default="pi0_0p5GeV_100K/shower_merge/", help="directory to save plots")
+    parser.add_argument("-a", "--analysis", dest="study", type=str, choices=["separation", "merge", "energy", "test"], default="merge", help="what plots we want to study")
+    #args = parser.parse_args("-a test".split()) #! to run in Jutpyter notebook
+    args = parser.parse_args() #! run in command line
 
-f_l = ["2 showers", "3 showers, unmerged", "3 showers, merge by angle", "3 showers, merge by distance"]
-fe_range = [-1, 1]
-ts = [t_2, t, t_a, t_s]
-rs = [r_2, r, r_a, r_s]
-es = [e_2, e, e_a, e_s]
-
-# Plot2DTest(0)
-# Plot2DTest(1)
-# Plot2DTest(2)
-# Plot2DTest(3)
-# Plot2DTest(4)
-
-# hists = []
-# h0, xedges, yedges = np.histogram2d(ts[0][2], es[0][2], bins=bins, range=[[min(ts[0][2]), max(es[0][2])], fe_range], density=True)
-# plt.figure()
-# for i in range(len(f_l)):
-#     x = ts[i][2]
-#     y = es[i][2]
-#     x_range = [min(x), max(x)]
-#     h, _, _ = np.histogram2d(x, y, bins=[xedges, yedges], range=[x_range, fe_range], density=True)
-#     h = np.ravel(np.nan_to_num(h / h0, posinf=0, neginf=0))
-#     h = h[h != 0]
-#     hists.append(h)
-
-# hists.reverse()
-# f_l.reverse()
-# for i in range(len(f_l)-1):
-#     if i == 0:
-#         _, edges = Plots.PlotHist(hists[i], bins=50, xlabel="bin height ratio wrt 2 shower sample", histtype="step", density=False, newFigure=False, label=f_l[i])
-#     else:
-#         Plots.PlotHist(hists[i], bins=edges, xlabel="bin height ratio wrt 2 shower sample", histtype="step", density=False, newFigure=False, label=f_l[i])
-
-#AnalyseQuantities()
-#AnalyzeReco(events, matched, unmatched)
-#AnalyzeTruth(events, photons)
-print(f'time taken: {(time.time()-s):.4f}')
+    file = args.file
+    bins = args.bins
+    save = args.save
+    outDir = args.outDir
+    study = args.study
+    main()

@@ -5,6 +5,7 @@ Author: Shyam Bhuller
 
 Description: compare recontructed MC to MC truth.
 """
+import argparse
 import os
 import awkward as ak
 import time
@@ -15,7 +16,7 @@ import Master
 import vector
 
 @Master.timer
-def MCTruth(sortEnergy, photons):
+def MCTruth(events, sortEnergy, photons):
     """Calculate true shower pair quantities.
 
     Args:
@@ -51,7 +52,7 @@ def MCTruth(sortEnergy, photons):
     return inv_mass, angle, p_daughter_mag[:, 1:], p_daughter_mag[:, :-1], p_pi0
 
 @Master.timer
-def RecoQauntities(sortEnergy):
+def RecoQauntities(events, sortEnergy):
     """Calculate reconstructed shower pair quantities.
 
     Args:
@@ -157,7 +158,7 @@ def PlotSingle(data, ranges, labels, bins, subDirectory, names, save):
         if save is True: Plots.Save(names[i], subDirectory)
 
 
-def PlotReco(reco, labels, names):
+def PlotReco(reco, nDaughters, labels, names):
     """Plot reconstructed quantities.
 
     Args:
@@ -188,74 +189,81 @@ def PlotTruth(truth, labels, names):
         if save is True: Plots.Save(names[i], outDirTrue)
 
 
-#* user parameters
-save = False
-outDir = "pi0_0p5GeV_100K/match_MC_all/"
-bins = 50
+def main():
+    #* load data
+    events = Master.Event(file)
+    nDaughters = ak.count(events.recoParticles.nHits, -1) # for plotting
 
-s = time.time()
-#* load data
-events = Master.Event("ROOTFiles/pi0_0p5GeV_100K_5_7_21.root")
+    #* filter
+    valid, photons = Master.Pi0MCFilter(events, None)
 
-nDaughters = ak.count(events.recoParticles.nHits, -1) # for plotting
+    shower_dir = events.recoParticles.direction[valid]
+    print(f"Number of showers events: {ak.num(shower_dir, 0)}")
+    photon_dir = vector.normalize(events.trueParticles.momentum)[photons][valid]
 
-#* filter
-valid, photons = Master.Pi0MCFilter(events, None)
+    showers, _, selection_mask = events.MatchMC(photon_dir, shower_dir)
 
-shower_dir = events.recoParticles.direction[valid]
-print(f"Number of showers events: {ak.num(shower_dir, 0)}")
-photon_dir = vector.normalize(events.trueParticles.momentum)[photons][valid]
+    events = events.Filter([valid, showers, selection_mask], [valid, selection_mask])
 
-showers, _, selection_mask = events.MatchMC(photon_dir, shower_dir)
+    photons = photons[valid][selection_mask] #? move to TrueParticles static variables? 
 
-events = events.Filter([valid, showers, selection_mask], [valid, selection_mask])
+    sort = events.SortByTrueEnergy()
 
-photons = photons[valid][selection_mask] #? move to TrueParticles static variables? 
+    #* calculate quantities
+    mct = MCTruth(events, sort, photons)
+    rmc = RecoQauntities(events, sort)
 
-sort = events.SortByTrueEnergy()
+    # keep track of events with no shower pairs
+    null = ak.flatten(rmc[-1], -1)
+    null = ak.num(null, 1) > 0
 
-#* calculate quantities
-mct = MCTruth(sort, photons)
-rmc = RecoQauntities(sort)
+    #* compute errors
+    error = []
+    reco = []
+    true = []
+    for i in range(len(names)):
+        print(names[i])
+        e, r, t = Error(rmc[i], mct[i], null)
+        error.append(e)
+        reco.append(r)
+        true.append(t)
 
-# keep track of events with no shower pairs
-null = ak.flatten(rmc[-1], -1)
-null = ak.num(null, 1) > 0
+    error = np.nan_to_num(error, nan=-999)
+    reco = np.nan_to_num(reco, nan=-999)
+    true = np.nan_to_num(true, nan=-999)
 
-# plot names and labels
-names = ["inv_mass", "angle", "lead_energy", "sub_energy", "pi0_mom"]
-t_l = ["True invariant mass (GeV)", "True opening angle (rad)", "True leading shower energy (GeV)", "True secondary shower energy (GeV)", "True $\pi^{0}$ momentum (GeV)"]
-e_l = ["Invariant mass fractional error (GeV)", "Opening angle fractional error (rad)", "Leading shower energy fractional error (GeV)", "Secondary shower energy fractional error (GeV)", "$\pi^{0}$ momentum fractional error (GeV)"]
-r_l = ["Invariant mass (GeV)", "Opening angle (rad)", "Leading shower energy (GeV)", "Subleading shower energy (GeV)", "$\pi^{0}$ momentum (GeV)"]
+    t_r = [[-998, max(true[0])], [-998, max(true[1])], [-998, max(true[2])], [-998, max(true[3])], [-998, max(true[4])]]
+    #e_r = [[-998, max(error[0])], [-998, max(error[1])], [-998, max(error[2])], [-998, max(error[3])], [-998, max(error[4])]]
+    e_r = [[-1, 1]]*5 # plot bounds for fractional errors
 
-#* compute errors
-error = []
-reco = []
-true = []
-for i in range(len(names)):
-    print(names[i])
-    e, r, t = Error(rmc[i], mct[i], null)
-    error.append(e)
-    reco.append(r)
-    true.append(t)
+    #* make plots
+    if save is True: os.makedirs(outDir + "2D/", exist_ok=True)
+    for j in range(len(error)):
+        for i in range(len(true)):
+            Plots.PlotHist2D(true[i], error[j], bins, x_range=t_r[i], y_range=e_r[j], xlabel=t_l[i], ylabel=e_l[j])
+            if save is True: Plots.Save( names[j]+"_"+names[i] , outDir + "2D/")
 
-error = np.nan_to_num(error, nan=-999)
-reco = np.nan_to_num(reco, nan=-999)
-true = np.nan_to_num(true, nan=-999)
+    PlotSingle(error, e_r, e_l, bins, outDir + "fractional_errors/", names, save)
+    PlotReco(reco, nDaughters, r_l, names)
+    PlotTruth(true, t_l, names)
 
-t_r = [[-998, max(true[0])], [-998, max(true[1])], [-998, max(true[2])], [-998, max(true[3])], [-998, max(true[4])]]
-#e_r = [[-998, max(error[0])], [-998, max(error[1])], [-998, max(error[2])], [-998, max(error[3])], [-998, max(error[4])]]
-e_r = [[-1, 1]]*5 # plot bounds for fractional errors
 
-#* make plots
-if save is True: os.makedirs(outDir + "2D/", exist_ok=True)
-for j in range(len(error)):
-    for i in range(len(true)):
-        Plots.PlotHist2D(true[i], error[j], bins, x_range=t_r[i], y_range=e_r[j], xlabel=t_l[i], ylabel=e_l[j])
-        if save is True: Plots.Save( names[j]+"_"+names[i] , outDir + "2D/")
+if __name__ == "__main__":
+    names = ["inv_mass", "angle", "lead_energy", "sub_energy", "pi0_mom"]
+    t_l = ["True invariant mass (GeV)", "True opening angle (rad)", "True leading shower energy (GeV)", "True secondary shower energy (GeV)", "True $\pi^{0}$ momentum (GeV)"]
+    e_l = ["Invariant mass fractional error (GeV)", "Opening angle fractional error (rad)", "Leading shower energy fractional error (GeV)", "Secondary shower energy fractional error (GeV)", "$\pi^{0}$ momentum fractional error (GeV)"]
+    r_l = ["Invariant mass (GeV)", "Opening angle (rad)", "Leading shower energy (GeV)", "Subleading shower energy (GeV)", "$\pi^{0}$ momentum (GeV)"]
 
-PlotSingle(error, e_r, e_l, bins, outDir + "fractional_errors/", names, save)
+    parser = argparse.ArgumentParser(description="Study em shower merging for pi0 decays.")
+    parser.add_argument("-f", "--file", dest="file", type=str, default="ROOTFiles/pi0_0p5GeV_100K_5_7_21.root", help="ROOT file to open.")
+    parser.add_argument("-b", "--nbins", dest="bins", type=int, default=50, help="number of bins when plotting histograms.")
+    parser.add_argument("-s", "--save", dest="save", type=bool, default=False, help="whether to save the plots.")
+    parser.add_argument("-d", "--directory", dest="outDir", type=str, default="pi0_0p5GeV_100K/match_MC/", help="directory to save plots.")
+    #args = parser.parse_args("") #! to run in Jutpyter notebook
+    args = parser.parse_args() #! run in command line
 
-PlotReco(reco, r_l, names)
-PlotTruth(true, t_l, names)
-print(f'time taken: {(time.time()-s):.4f}' )
+    file = args.file
+    bins = args.bins
+    save = args.save
+    outDir = args.outDir
+    main()
