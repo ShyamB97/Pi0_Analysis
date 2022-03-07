@@ -22,7 +22,7 @@ outDir = "pi0_0p5GeV_100K/match_MC/reco_info/"
 bins = 50
 allPairs = False
 s = time.time()
-events = Master.Event("../ROOTFiles/pi0_0p5GeV_100K_5_7_21.root")
+events = Master.Data("../ROOTFiles/pi0_0p5GeV_100K_5_7_21.root")
 
 
 #* number of showers
@@ -44,9 +44,8 @@ null = ak.any(events.recoParticles.direction.x == -999, 1) # exclude events wher
 valid = np.logical_and(valid, np.logical_not(null))
 
 direction = events.recoParticles.direction[valid]
-t_dir = t_dir[photons][valid]
 
-showers, selection_mask = Master.MatchMC(t_dir, direction)
+showers, selection_mask = Master.MatchMC()
 
 direction = direction[showers][selection_mask]
 nHits = events.recoParticles.nHits[valid][showers][selection_mask]

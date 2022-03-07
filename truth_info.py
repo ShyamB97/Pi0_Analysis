@@ -21,17 +21,17 @@ outDir = "pi0_0p5GeV_100K/match_MC/truth_info/"
 bins = 50
 start = time.time()
 
-events = Master.Event("../ROOTFiles/pi0_0p5GeV_100K_5_7_21.root")
+events = Master.Data("../ROOTFiles/pi0_0p5GeV_100K_5_7_21.root")
 direction = vector.normalize(events.trueParticles.momentum)
 
 
 #* filter events
-valid, photons = Master.Pi0MCFilter(events, 2)
+valid = Master.Pi0MCMask(events, 2)
 
 r_dir = events.recoParticles.direction[valid]
-direction = direction[photons][valid]
+direction = direction[events.trueParticles.truePhotonMask][valid]
 
-_, selection_mask = events.MatchMC(direction, r_dir) # showers are not needed for truth info
+_, selection_mask = events.GetMCMatchingFilters(direction, r_dir) # showers are not needed for truth info
 
 momentum = events.trueParticles.momentum[valid][selection_mask]
 pdg = events.trueParticles.pdg[valid][selection_mask]

@@ -16,7 +16,7 @@ import Master
 import vector
 
 @Master.timer
-def MCTruth(events, sortEnergy, photons):
+def MCTruth(events : Master.Data):
     """Calculate true shower pair quantities.
 
     Args:
@@ -27,6 +27,7 @@ def MCTruth(events, sortEnergy, photons):
     """
     #* get the primary pi0
     mask_pi0 = np.logical_and(events.trueParticles.number == 1, events.trueParticles.pdg == 111)
+    photons = events.trueParticles.truePhotonMask
 
     #* get pi0 -> two photons only
     #mask_daughters = ak.all(events.trueParticles.pdg != 11, axis=1)
@@ -37,7 +38,7 @@ def MCTruth(events, sortEnergy, photons):
     sum_p = ak.sum(p_daughter, axis=1)
     sum_p = vector.magntiude(sum_p)
     p_daughter_mag = vector.magntiude(p_daughter)
-    p_daughter_mag = p_daughter_mag[sortEnergy]
+    p_daughter_mag = p_daughter_mag[events.SortedTrueEnergyMask]
 
     #* compute true opening angle
     angle = np.arccos(vector.dot(p_daughter[:, 1:], p_daughter[:, :-1]) / (p_daughter_mag[:, 1:] * p_daughter_mag[:, :-1]))
@@ -52,11 +53,11 @@ def MCTruth(events, sortEnergy, photons):
     return inv_mass, angle, p_daughter_mag[:, 1:], p_daughter_mag[:, :-1], p_pi0
 
 @Master.timer
-def RecoQauntities(events, sortEnergy):
+def RecoQauntities(events : Master.Data):
     """Calculate reconstructed shower pair quantities.
 
     Args:
-        sortEnergy (ak.array): mask to sort shower pairs by true energy
+        events (Data): events to study
 
     Returns:
         tuple of ak.Array: calculated quantities + array which masks null shower pairs
@@ -71,6 +72,7 @@ def RecoQauntities(events, sortEnergy):
     #leading = sortedPairs[:, :, 1:]
     #secondary = sortedPairs[:, :, :-1]
     #! not needed if we match to true photons
+    sortEnergy = events.SortedTrueEnergyMask
     sortedPairs = ak.unflatten(events.recoParticles.energy[sortEnergy], 1, 0)
     leading = sortedPairs[:, :, 1:]
     secondary = sortedPairs[:, :, :-1]
@@ -191,27 +193,21 @@ def PlotTruth(truth, labels, names):
 
 def main():
     #* load data
-    events = Master.Event(file)
+    events = Master.Data(file)
     nDaughters = ak.count(events.recoParticles.nHits, -1) # for plotting
 
     #* filter
-    valid, photons = Master.Pi0MCFilter(events, None)
+    valid = Master.Pi0MCMask(events, -1)
+    print(f"Number of showers before filtering: {ak.num(events.recoParticles.direction, 0)}")
+    events.Filter([valid], [valid], returnCopy=False)
+    print(f"Number of showers after filtering: {ak.num(events.recoParticles.direction, 0)}")
+    showers, _, selection_mask = events.GetMCMatchingFilters()
 
-    shower_dir = events.recoParticles.direction[valid]
-    print(f"Number of showers events: {ak.num(shower_dir, 0)}")
-    photon_dir = vector.normalize(events.trueParticles.momentum)[photons][valid]
-
-    showers, _, selection_mask = events.MatchMC(photon_dir, shower_dir)
-
-    events = events.Filter([valid, showers, selection_mask], [valid, selection_mask])
-
-    photons = photons[valid][selection_mask] #? move to TrueParticles static variables? 
-
-    sort = events.SortByTrueEnergy()
+    events.Filter([showers, selection_mask], [selection_mask], returnCopy=False)
 
     #* calculate quantities
-    mct = MCTruth(events, sort, photons)
-    rmc = RecoQauntities(events, sort)
+    mct = MCTruth(events)
+    rmc = RecoQauntities(events)
 
     # keep track of events with no shower pairs
     null = ak.flatten(rmc[-1], -1)
@@ -243,7 +239,7 @@ def main():
             Plots.PlotHist2D(true[i], error[j], bins, x_range=t_r[i], y_range=e_r[j], xlabel=t_l[i], ylabel=e_l[j])
             if save is True: Plots.Save( names[j]+"_"+names[i] , outDir + "2D/")
 
-    PlotSingle(error, e_r, e_l, bins, outDir + "fractional_errors/", names, save)
+    #PlotSingle(error, e_r, e_l, bins, outDir + "fractional_errors/", names, save)
     PlotReco(reco, nDaughters, r_l, names)
     PlotTruth(true, t_l, names)
 

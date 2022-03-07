@@ -17,7 +17,7 @@ import Plots
 import Master
 import vector
 
-def AnalyzeReco(events : Master.Event, matched : ak.Array, unmatched : ak.Array):
+def AnalyzeReco(events : Master.Data, matched : ak.Array, unmatched : ak.Array):
     """Study relationships between angles and distances between matched and unmatched showers.
 
     Args:
@@ -96,16 +96,15 @@ def AnalyzeReco(events : Master.Event, matched : ak.Array, unmatched : ak.Array)
     plt.rcParams["figure.figsize"] = plt.rcParamsDefault["figure.figsize"]
 
 
-def AnalyzeTruth(events : Master.Event, photons : ak.Array):
+def AnalyzeTruth(events : Master.Data):
     """Plot distances of true particles wrt to eachother + the decay vertex to gauge size of pi0 decays
 
     Args:
         events (Master.Events): events to look at
-        photons (ak.Array): mask to get photons produced from pi0 decays
     """
     pi0_vertex = events.Filter(true_filters=[ak.to_list(events.trueParticles.number == 1)]).trueParticles.endPos # decay vertex is where the particle trajectory ends
 
-    photons_true = events.Filter(true_filters=[photons]).trueParticles
+    photons_true = events.Filter(true_filters=[events.trueParticles.truePhotonMask]).trueParticles
 
     #* distance from each photon end point to the deacy vertex
     dist_to_vertex_0 = vector.dist(pi0_vertex, photons_true.endPos[:, 0]) # photon end points are the start of showers
@@ -143,8 +142,35 @@ def MakePlots(dist : ak.Array, angle : ak.Array, dist_label : str, angle_label :
     Plots.PlotHist2D(dist, angle, bins, x_range=[0, 150], xlabel=dist_label, ylabel=angle_label, title=title)
     if save is True: Plots.Save( "2D" , _dir)
 
+
+def MergeQuantity(matched, unmatched, mask, type):
+    if type == "Vector3":
+        null = {"x": 0, "y": 0, "z": 0}
+    elif type == "Scalar":
+        null = 0
+    else:
+        # print error message
+        print("not a mergable type")
+    toMerge = ak.where(mask, unmatched, null)
+    if type == "Vector3":
+         toMerge = ak.where(toMerge.x != -999, toMerge, null)
+    if type == "Scalar":
+         toMerge = ak.where(toMerge != -999, toMerge, null)
+    merge_0 = toMerge[:, :, 0]
+    merge_1 = toMerge[:, :, 1]
+    merge_0 = ak.sum(merge_0, -1)
+    merge_1 = ak.sum(merge_1, -1)
+    merge_0 = ak.unflatten(merge_0, 1, -1)
+    merge_1 = ak.unflatten(merge_1, 1, -1)
+    merge = ak.concatenate([merge_0, merge_1], -1)
+    if type == "Vector3":
+         merge = ak.where(matched.x != -999, merge, null)
+    if type == "Scalar":
+         merge = ak.where(matched != -999, merge, null)
+    return merge
+
 @Master.timer
-def mergeShower(events : Master.Event, matched : ak.Array, unmatched : ak.Array, mergeMethod : int = 1, energyScalarSum : bool = False):
+def mergeShower(events : Master.Data, matched : ak.Array, unmatched : ak.Array, mergeMethod : int = 1, energyScalarSum : bool = False):
     """Merge shower not matched to MC to the spatially closest matched shower.
        Only works for 3 daughters per event.
 
@@ -165,30 +191,29 @@ def mergeShower(events : Master.Event, matched : ak.Array, unmatched : ak.Array,
         #* distance from each matched to unmatched
         separation_0 = vector.dist(unmatched_reco.startPos, events_matched.recoParticles.startPos[:, 0])
         separation_1 = vector.dist(unmatched_reco.startPos, events_matched.recoParticles.startPos[:, 1])
+        separation_0 = ak.unflatten(separation_0, 1, -1)
+        separation_1 = ak.unflatten(separation_1, 1, -1)
         separation = ak.concatenate([separation_0, separation_1], -1)
         mergeMask = ak.min(separation, -1) == separation # get boolean mask to which matched shower to merge to
 
     if mergeMethod == 1:
         angle_0 = vector.angle(unmatched_reco.direction, events_matched.recoParticles.direction[:, 0])
-        angle_1 = vector.angle(unmatched_reco.direction, events_matched.recoParticles.direction[:, 1])
+        angle_1 = vector.angle(unmatched_reco.direction, events_matched.recoParticles.direction[:, 1])        
+        angle_0 = ak.unflatten(angle_0, 1, -1)
+        angle_1 = ak.unflatten(angle_1, 1, -1)
         angle = ak.concatenate([angle_0, angle_1], -1)
         mergeMask = ak.min(angle, -1) == angle
 
     #* create Array which contains the amount of energy to merge to the showers
     #* will be zero for the shower we don't want to merge to
-    momentumToMerge = ak.where(mergeMask, ak.flatten(unmatched_reco.momentum), {"x": 0, "y": 0, "z": 0}) # create array, where if mergeMask is true, then add appropriate energy, else 0
-    momentumToMerge = ak.where(events_matched.recoParticles.momentum.x != -999, momentumToMerge, {"x": 0, "y": 0, "z": 0})  # ensure when mergeing we ignore matched showers with undefined energy
-    momentumToMerge = ak.where(momentumToMerge.x != -999, momentumToMerge, {"x": 0, "y": 0, "z": 0}) # ensure when mergeing we ignore unmatched showers with undefined energy
-
+    momentumToMerge = MergeQuantity(events_matched.recoParticles.momentum, unmatched_reco.momentum, mergeMask, "Vector3")
     events_matched.recoParticles.momentum = vector.Add(events_matched.recoParticles.momentum, momentumToMerge)
 
     new_direction = vector.normalize(events_matched.recoParticles.momentum)
     events_matched.recoParticles.direction = ak.where(events_matched.recoParticles.momentum.x != -999, new_direction, {"x": -999, "y": -999, "z": -999})
 
     if energyScalarSum is True:
-        energyToMerge = ak.where(mergeMask, ak.flatten(unmatched_reco.energy), 0) # create array, where if mergeMask is true, then add appropriate energy, else 0
-        energyToMerge = ak.where(events_matched.recoParticles.energy != -999, energyToMerge, 0) # ensure when mergeing we ignore matched showers with undefined energy
-        energyToMerge = ak.where(energyToMerge != -999, energyToMerge, 0) # ensure when mergeing we ignore unmatched showers with undefined energy
+        energyToMerge = MergeQuantity(events_matched.recoParticles.energy, unmatched_reco.energy, mergeMask, "Scalar")
         events_matched.recoParticles.energy = events_matched.recoParticles.energy + energyToMerge # merge energies
         events_matched.recoParticles.momentum = vector.prod(events_matched.recoParticles.energy, events_matched.recoParticles.direction)
     else:
@@ -196,21 +221,21 @@ def mergeShower(events : Master.Event, matched : ak.Array, unmatched : ak.Array,
         events_matched.recoParticles.energy = ak.where(events_matched.recoParticles.momentum.x != -999, new_energy, -999)
 
     return events_matched
- 
+
+
 @Master.timer
-def CalculateQuantities(events : Master.Event, photons : ak.Array, names : str):
+def CalculateQuantities(events : Master.Data, names : str):
     """Calcaulte reco/ true quantities of shower pairs, and format them for plotting
 
     Args:
         events (Master.Event): events to look at
-        photons (ak.Array): mask which gets true photons
         names (str): quantity names
 
     Returns:
         tuple of np.arrays: quantities to plot
     """
-    mct = Master.MCTruth(events, events.SortByTrueEnergy(), photons)
-    rmc = Master.RecoQuantities(events, events.SortByTrueEnergy())
+    mct = Master.MCTruth(events, events.SortedTrueEnergyMask)
+    rmc = Master.RecoQuantities(events, events.SortedTrueEnergyMask)
 
     # keep track of events with no shower pairs
     null = ak.flatten(rmc[-1], -1)
@@ -221,7 +246,7 @@ def CalculateQuantities(events : Master.Event, photons : ak.Array, names : str):
     true = []
     for i in range(len(names)):
         print(names[i])
-        e, r, t = Master.Error(rmc[i], mct[i], null)
+        e, r, t = Master.FractionalError(rmc[i], mct[i], null)
         error.append(e)
         reco.append(r)
         true.append(t)
@@ -232,7 +257,7 @@ def CalculateQuantities(events : Master.Event, photons : ak.Array, names : str):
     return true, reco, error
 
 
-def CreateFilteredEvents(events : Master.Event, nDaughters : int = None):
+def CreateFilteredEvents(events : Master.Data, nDaughters : int = None):
     """Filter events with specific number of daughters, then match the showers to
        MC truth.
 
@@ -241,21 +266,18 @@ def CreateFilteredEvents(events : Master.Event, nDaughters : int = None):
         nDaughters (int, optional): filter events with ndaughters. Defaults to None.
 
     Returns:
-        Master.Event: events after filering
-        ak.Array: true photon mask 
+        Master.Event: events after filering 
     """
-    valid, photons = Master.Pi0MCFilter(events, nDaughters)
+    valid = Master.Pi0MCMask(events, nDaughters)
+    filtered = events.Filter([valid], [valid])
+    print(f"Number of showers events: {ak.num(filtered.recoParticles.direction, 0)}")
 
-    shower_dir = events.recoParticles.direction[valid]
-    print(f"Number of showers events: {ak.num(shower_dir, 0)}")
-    photon_dir = vector.normalize(events.trueParticles.momentum)[photons][valid]
+    showers, _, selection_mask = filtered.GetMCMatchingFilters()
 
-    showers, _, selection_mask = events.MatchMC(photon_dir, shower_dir, returnAngles=False)
+    reco_filters = [showers, selection_mask]
+    true_filters = [selection_mask]
 
-    reco_filters = [valid, showers, selection_mask]
-    true_filters = [valid, selection_mask]
-
-    return events.Filter(reco_filters, true_filters), photons[valid][selection_mask]
+    return filtered.Filter(reco_filters, true_filters)
 
 
 def AnalyseQuantities(truths : np.array, recos : np.array, errors : np.array, labels : list, directory : str):
@@ -311,7 +333,7 @@ def AnalyseQuantities(truths : np.array, recos : np.array, errors : np.array, la
     plt.rcParams["figure.figsize"] = plt.rcParamsDefault["figure.figsize"]
 
 
-def Plot2DTest(ind, truths, errors):
+def Plot2DTest(ind, truths, errors, labels):
     # hists = []
     # h0, xedges, yedges = np.histogram2d(ts[0][2], es[0][2], bins=bins, range=[[min(ts[0][2]), max(es[0][2])], fe_range], density=True)
     # plt.figure()
@@ -343,7 +365,7 @@ def Plot2DTest(ind, truths, errors):
         else:
             x_range = [min(x), max(x)]
         if i == 0:
-            h0, xedges, yedges = np.histogram2d(x, y, bins=bins, range=[x_range, fe_range ], density=True)
+            h0, xedges, yedges = np.histogram2d(x, y, bins=bins/2, range=[x_range, fe_range ], density=True)
             #scale_factor = np.max(h0)
             cmap = plt.get_cmap()
             #norm = matplotlib.colors.Normalize(0, 2)
@@ -360,7 +382,7 @@ def Plot2DTest(ind, truths, errors):
             im = axes.flat[i].imshow(np.flip(h.T, 0), extent=[x_range[0], x_range[1], fe_range[0], fe_range[1]], norm=matplotlib.colors.LogNorm())#, norm=norm, cmap=cmap)
             fig.colorbar(im, ax=axes.flat[i])
         axes.flat[i].set_aspect("auto")
-        axes.flat[i].set_title(f_l[i])
+        axes.flat[i].set_title(labels[i])
 
     # add common x and y axis labels
     fig.add_subplot(1, 1, 1, frame_on=False)
@@ -372,38 +394,32 @@ def Plot2DTest(ind, truths, errors):
     plt.ylabel(e_l[2], fontsize=14)
 
 
-#* user parameters
 @Master.timer
 def main():
-    s = time.time()
-    events = Master.Event(file)
-    events_2, photons_2 = CreateFilteredEvents(events, 2)
-    valid, photons = Master.Pi0MCFilter(events, 3)
-
-    shower_dir = events.recoParticles.direction[valid]
-    photon_dir = vector.normalize(events.trueParticles.momentum)[photons][valid]
-
-    matched, unmatched, selection_mask = events.MatchMC(photon_dir, shower_dir)
-
-    events = events.Filter([valid, selection_mask], [valid, selection_mask]) # filter events based on MC matching
+    events = Master.Data(file)
+    events_2 = CreateFilteredEvents(events, 2)
+    
+    valid = Master.Pi0MCMask(events, 3)
+    events_3 = events.Filter([valid], [valid])
+    matched, unmatched, selection_mask = events_3.GetMCMatchingFilters()
+    events_3 = events_3.Filter([selection_mask], [selection_mask]) # filter events based on MC matching
 
     # filter masks
     matched = matched[selection_mask]
     unmatched = unmatched[selection_mask]
-    photons = photons[valid][selection_mask]
 
-    events_merged_a_scalar = mergeShower(events, matched, unmatched, 1, True)
-    events_merged_s_scalar = mergeShower(events, matched, unmatched, 2, True)
-    events_merged_a_vector = mergeShower(events, matched, unmatched, 1, False)
-    events_merged_s_vector = mergeShower(events, matched, unmatched, 2, False)
-    events_unmerged = events.Filter([matched])
+    events_merged_a_scalar = mergeShower(events_3, matched, unmatched, 1, True)
+    events_merged_s_scalar = mergeShower(events_3, matched, unmatched, 2, True)
+    events_merged_a_vector = mergeShower(events_3, matched, unmatched, 1, False)
+    events_merged_s_vector = mergeShower(events_3, matched, unmatched, 2, False)
+    events_unmerged = events_3.Filter([matched])
 
-    q_2 = CalculateQuantities(events_2, photons_2, names)
-    q = CalculateQuantities(events_unmerged, photons, names)
-    q_a_vector = CalculateQuantities(events_merged_a_vector, photons, names)
-    q_s_vector = CalculateQuantities(events_merged_s_vector, photons, names)
-    q_a_scalar = CalculateQuantities(events_merged_a_scalar, photons, names)
-    q_s_scalar = CalculateQuantities(events_merged_s_scalar, photons, names)
+    q_2 = CalculateQuantities(events_2, names)
+    q = CalculateQuantities(events_unmerged, names)
+    q_a_vector = CalculateQuantities(events_merged_a_vector, names)
+    q_s_vector = CalculateQuantities(events_merged_s_vector, names)
+    q_a_scalar = CalculateQuantities(events_merged_a_scalar, names)
+    q_s_scalar = CalculateQuantities(events_merged_s_scalar, names)
 
     f_l_vector = [f_l[0], f_l[1], "angular", "spatial"]
     ts_vector = [q_2[0], q[0], q_a_vector[0], q_s_vector[0]]
@@ -426,26 +442,26 @@ def main():
     es_dist = [q_2[2], q[2], q_s_scalar[2], q_s_vector[2]]
 
     if study == "merge":
-        AnalyseQuantities(ts_scalar, rs_scalar, es_scalar, f_l_scalar, outDir+"merge_comp/")
+        AnalyseQuantities(ts_vector, rs_vector, es_vector, f_l_vector, outDir+"merge_comp/")
     if study == "energy":
         AnalyseQuantities(ts_angle, rs_angle, es_angle, f_l_angle, outDir+"angle/")
         AnalyseQuantities(ts_dist, rs_dist, es_dist, f_l_dist, outDir+"dist/")
     if study == "separation":
-        AnalyzeReco(events, matched, unmatched)
-        AnalyzeTruth(events, photons)
+        AnalyzeReco(events_3, matched, unmatched)
+        AnalyzeTruth(events_3)
     if study == "test":
         print("running test code...")
-        if save is True: os.makedirs(outDir + "2DTest/spatial/", exist_ok=True)
+        if save is True: os.makedirs(outDir + "2DTest/scalar/", exist_ok=True)
         for i in range(len(names)):
-            Plot2DTest(i, ts_dist, es_dist)
-            if save is True: Plots.Save(names[i], outDir + "2DTest/spatial/")
+            Plot2DTest(i, ts_dist, es_dist, f_l_scalar)
+            if save is True: Plots.Save(names[i], outDir + "2DTest/scalar/")
 
 
 if __name__ == "__main__":
 
     names = ["inv_mass", "angle", "lead_energy", "sub_energy", "pi0_mom"]
-    t_l = ["True invariant mass (GeV)", "True opening angle (rad)", "True leading shower energy (GeV)", "True secondary shower energy (GeV)", "True $\pi^{0}$ momentum (GeV)"]
-    e_l = ["Invariant mass fractional error (GeV)", "Opening angle fractional error (rad)", "Leading shower energy fractional error (GeV)", "Secondary shower energy fractional error (GeV)", "$\pi^{0}$ momentum fractional error (GeV)"]
+    t_l = ["True invariant mass (GeV)", "True opening angle (rad)", "True leading shower energy (GeV)", "True subleading shower energy (GeV)", "True $\pi^{0}$ momentum (GeV)"]
+    e_l = ["Invariant mass fractional error (GeV)", "Opening angle fractional error (rad)", "Leading shower energy fractional error (GeV)", "Subleading shower energy fractional error (GeV)", "$\pi^{0}$ momentum fractional error (GeV)"]
     r_l = ["Invariant mass (GeV)", "Opening angle (rad)", "Leading shower energy (GeV)", "Subleading shower energy (GeV)", "$\pi^{0}$ momentum (GeV)"]
     f_l = ["2 showers", "3 showers, unmerged", "angular vector sum", "spatial vector sum", "angular scalar sum", "spatial scalar sum"]
     fe_range = [-1, 1]
@@ -456,8 +472,8 @@ if __name__ == "__main__":
     parser.add_argument("-s", "--save", dest="save", type=bool, default=False, help="whether to save the plots")
     parser.add_argument("-d", "--directory", dest="outDir", type=str, default="pi0_0p5GeV_100K/shower_merge/", help="directory to save plots")
     parser.add_argument("-a", "--analysis", dest="study", type=str, choices=["separation", "merge", "energy", "test"], default="merge", help="what plots we want to study")
-    #args = parser.parse_args("-a test".split()) #! to run in Jutpyter notebook
-    args = parser.parse_args() #! run in command line
+    args = parser.parse_args("-a separation".split()) #! to run in Jutpyter notebook
+    #args = parser.parse_args() #! run in command line
 
     file = args.file
     bins = args.bins

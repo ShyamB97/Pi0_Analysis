@@ -19,30 +19,29 @@ import Master
 import vector
 
 
-def CreateFilteredEvents(events : Master.Event, nDaughters=None):
-    valid, photons = Master.Pi0MCFilter(events, nDaughters)
+def CreateFilteredEvents(events : Master.Data, nDaughters=None):
+    valid = Master.Pi0MCMask(events, nDaughters)
 
-    shower_dir = events.recoParticles.direction[valid]
-    print(f"Number of showers events: {ak.num(shower_dir, 0)}")
-    photon_dir = vector.normalize(events.trueParticles.momentum)[photons][valid]
+    filtered = events.Filter([valid], [valid])
 
-    showers, _, selection_mask, angles = events.MatchMC(photon_dir, shower_dir, returnAngles=True)
+    print(f"Number of showers events: {ak.num(filtered.recoParticles.direction, 0)}")
+    showers, _, selection_mask, angles = filtered.GetMCMatchingFilters(returnAngles=True)
 
     Plots.PlotHist(ak.ravel(angles[:, 0]), 50, "Angle between matched shower and true photon 1 (rad)")
     Plots.PlotHist(ak.ravel(angles[:, 1]), 50, "Angle between matched shower and true photon 2 (rad)")
     
+    reco_filters = [showers, selection_mask]
+    true_filters = [selection_mask]
 
-    reco_filters = [valid, showers, selection_mask]
-    true_filters = [valid, selection_mask]
-
-    return events.Filter(reco_filters, true_filters), photons[valid][selection_mask]
+    return filtered.Filter(reco_filters, true_filters)
 
 @Master.timer
-def CalculateQuantities(events : Master.Event, nDaughter : int = None):
-    filtered, photons = CreateFilteredEvents(events, nDaughter)
+def CalculateQuantities(events : Master.Data, nDaughter : int = None):
+    filtered = CreateFilteredEvents(events, nDaughter)
     print(f"Number of events after filtering: {ak.num(filtered.recoParticles.nHits, 0)}")
-    mct = Master.MCTruth(filtered, filtered.SortByTrueEnergy(), photons)
-    rmc = Master.RecoQuantities(filtered, filtered.SortByTrueEnergy())
+    sort = filtered.SortedTrueEnergyMask
+    mct = Master.MCTruth(filtered, sort)
+    rmc = Master.RecoQuantities(filtered, sort)
 
     # keep track of events with no shower pairs
     null = ak.flatten(rmc[-1], -1)
@@ -53,7 +52,7 @@ def CalculateQuantities(events : Master.Event, nDaughter : int = None):
     true = []
     for i in range(len(names)):
         print(names[i])
-        e, r, t = Master.Error(rmc[i], mct[i], null)
+        e, r, t = Master.FractionalError(rmc[i], mct[i], null)
         error.append(e)
         reco.append(r)
         true.append(t)
@@ -63,11 +62,9 @@ def CalculateQuantities(events : Master.Event, nDaughter : int = None):
     true = np.nan_to_num(true, nan=-999)
     return true, reco, error
 
-
-#* user parameters
 @Master.timer
 def main():
-    events = Master.Event(file)
+    events = Master.Data(file)
     ts = []
     rs = []
     es = []
@@ -147,8 +144,8 @@ if __name__ == "__main__":
     parser.add_argument("-b", "--nbins", dest="bins", type=int, default=50, help="number of bins when plotting histograms.")
     parser.add_argument("-s", "--save", dest="save", type=bool, default=False, help="whether to save the plots.")
     parser.add_argument("-d", "--directory", dest="outDir", type=str, default="pi0_0p5GeV_100K/match_MC_compare/", help="directory to save plots.")
-    #args = parser.parse_args("") #! to run in Jutpyter notebook
-    args = parser.parse_args() #! run in command line
+    args = parser.parse_args("") #! to run in Jutpyter notebook
+    #args = parser.parse_args() #! run in command line
 
     file = args.file
     bins = args.bins
