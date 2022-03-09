@@ -188,11 +188,15 @@ def PlotBarComparision(data_1, data_2, width=0.4, xlabel="", title="", label_1="
     if(len(unique_2) > len(unique_1)):
         m = unique_2
         unique_2 = unique_1
-        unique_1 = unique_2
+        unique_1 = m
 
         m = counts_2
         counts_2 = counts_1
-        counts_1 = counts_2
+        counts_1 = m
+
+        m = label_2
+        label_2 = label_1
+        label_1 = m
 
     #for i in range(len(unique_2)):
     #    if unique_2[i] not in unique_1:
