@@ -4,11 +4,13 @@ Created on: 15/02/2022 17:37
 Author: Shyam Bhuller
 
 Description: A script studying pi0 decay geometry and shower merging.
+TODO Move shower merging algorithm to Master.Data
+TODO optimise main()
+TODO calculated quantities should be in ak.Array format
 """
 import argparse
 import os
 import awkward as ak
-import time
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -172,7 +174,6 @@ def MergeQuantity(matched, unmatched, mask, type):
 @Master.timer
 def mergeShower(events : Master.Data, matched : ak.Array, unmatched : ak.Array, mergeMethod : int = 1, energyScalarSum : bool = False):
     """Merge shower not matched to MC to the spatially closest matched shower.
-       Only works for 3 daughters per event.
 
     Args:
         events (Master.Event): events to study
@@ -223,40 +224,6 @@ def mergeShower(events : Master.Data, matched : ak.Array, unmatched : ak.Array, 
     return events_matched
 
 
-@Master.timer
-def CalculateQuantities(events : Master.Data, names : str):
-    """Calcaulte reco/ true quantities of shower pairs, and format them for plotting
-
-    Args:
-        events (Master.Event): events to look at
-        names (str): quantity names
-
-    Returns:
-        tuple of np.arrays: quantities to plot
-    """
-    mct = Master.MCTruth(events, events.SortedTrueEnergyMask)
-    rmc = Master.RecoQuantities(events, events.SortedTrueEnergyMask)
-
-    # keep track of events with no shower pairs
-    null = ak.flatten(rmc[-1], -1)
-    null = ak.num(null, 1) > 0
-
-    error = []
-    reco = []
-    true = []
-    for i in range(len(names)):
-        print(names[i])
-        e, r, t = Master.FractionalError(rmc[i], mct[i], null)
-        error.append(e)
-        reco.append(r)
-        true.append(t)
-
-    error = np.nan_to_num(error, nan=-999)
-    reco = np.nan_to_num(reco, nan=-999)
-    true = np.nan_to_num(true, nan=-999)
-    return true, reco, error
-
-
 def CreateFilteredEvents(events : Master.Data, nDaughters : int = None):
     """Filter events with specific number of daughters, then match the showers to
        MC truth.
@@ -280,6 +247,21 @@ def CreateFilteredEvents(events : Master.Data, nDaughters : int = None):
     return filtered.Filter(reco_filters, true_filters)
 
 
+def Plot1D(data : ak.Array, xlabels : list, subDir : str, labels : list, plot_range = []):
+    """ 1D histograms of data for each sample
+
+    Args:
+        data (ak.Array): list of samples data to plot
+        xlabels (list): x labels
+        subDir (str): subdirectiory to save in
+        plot_range (list, optional): range to plot. Defaults to [].
+    """
+    if save is True: os.makedirs(outDir + subDir, exist_ok=True)
+    for j in range(len(names)):
+        Plots.PlotHistComparison(data[:, j], plot_range, bins=bins, xlabel=xlabels[j], histtype="step", labels=labels, density=True)
+        if save is True: Plots.Save( names[j] , outDir + subDir)
+
+
 def AnalyseQuantities(truths : np.array, recos : np.array, errors : np.array, labels : list, directory : str):
     """Plot calculated quantities for given events
 
@@ -290,35 +272,9 @@ def AnalyseQuantities(truths : np.array, recos : np.array, errors : np.array, la
         labels (list): plot labels for different event types
         directory (str): output directory
     """
-    if save is True: os.makedirs(directory + "reco/", exist_ok=True)
-    l_loc = ["right", "right", "left", "right", "left"]
-    for j in range(len(names)):
-        plt.figure()
-        for i in range(len(labels)):
-            data = recos[i][j]
-            data = data[data > -900]
-            if i == 0:
-                _, edges = Plots.PlotHist(data, bins=bins, xlabel=r_l[j], histtype="step", newFigure=False, label=labels[i], density=True)
-            else:
-                Plots.PlotHist(data, bins=edges, xlabel=r_l[j], histtype="step", newFigure=False, label=labels[i], density=True)
-        plt.legend(loc=f"upper {l_loc[j]}", fontsize="small")
-        if save is True: Plots.Save( names[j] , directory + "reco/")
-
-    if save is True: os.makedirs(directory + "fractional_error/", exist_ok=True)
-    l_loc = ["left", "left", "left", "right", "left"]
-    for j in range(len(names)):
-        plt.figure()
-        for i in range(len(labels)):
-            data = errors[i][j]
-            data = data[data > fe_range[0]]
-            data = data[data < fe_range[1]]
-            if i == 0:
-                _, edges = Plots.PlotHist(data, bins=bins, xlabel=e_l[j], histtype="step", newFigure=False, label=labels[i], density=True)
-            else:
-                Plots.PlotHist(data, bins=edges, xlabel=e_l[j], histtype="step", newFigure=False, label=labels[i], density=True)
-        plt.legend(loc=f"upper {l_loc[j]}", fontsize="small")
-        if save is True: Plots.Save( names[j] , directory + "fractional_error/")
-
+    #! fix this
+    Plot1D(ak.Array(recos), r_l, "reco/", labels)
+    Plot1D(ak.Array(errors), e_l, "fractional_error/", labels, fe_range)
     if save is True: os.makedirs(directory + "2D/", exist_ok=True)
     plt.rcParams["figure.figsize"] = (6.4*2,4.8*2)
     for j in range(len(names)):
@@ -333,28 +289,8 @@ def AnalyseQuantities(truths : np.array, recos : np.array, errors : np.array, la
     plt.rcParams["figure.figsize"] = plt.rcParamsDefault["figure.figsize"]
 
 
-def Plot2DTest(ind, truths, errors, labels):
-    # hists = []
-    # h0, xedges, yedges = np.histogram2d(ts[0][2], es[0][2], bins=bins, range=[[min(ts[0][2]), max(es[0][2])], fe_range], density=True)
-    # plt.figure()
-    # for i in range(len(f_l)):
-    #     x = ts[i][2]
-    #     y = es[i][2]
-    #     x_range = [min(x), max(x)]
-    #     h, _, _ = np.histogram2d(x, y, bins=[xedges, yedges], range=[x_range, fe_range], density=True)
-    #     h = np.ravel(np.nan_to_num(h / h0, posinf=0, neginf=0))
-    #     h = h[h != 0]
-    #     hists.append(h)
-
-    # hists.reverse()
-    # f_l.reverse()
-    # for i in range(len(f_l)-1):
-    #     if i == 0:
-    #         _, edges = Plots.PlotHist(hists[i], bins=50, xlabel="bin height ratio wrt 2 shower sample", histtype="step", density=False, newFigure=False, label=f_l[i])
-    #     else:
-    #         Plots.PlotHist(hists[i], bins=edges, xlabel="bin height ratio wrt 2 shower sample", histtype="step", density=False, newFigure=False, label=f_l[i])
-
-    fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(6.4*2,4.8*2))
+def Plot2DTest(ind, truths, errors, labels, xlabels, ylabels, nrows, ncols, bins=25):
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(6.4*nrows,4.8*ncols))
 
     for i in range(len(axes.flat)):
         x = truths[i][ind]
@@ -365,13 +301,8 @@ def Plot2DTest(ind, truths, errors, labels):
         else:
             x_range = [min(x), max(x)]
         if i == 0:
-            h0, xedges, yedges = np.histogram2d(x, y, bins=bins/2, range=[x_range, fe_range ], density=True)
-            #scale_factor = np.max(h0)
-            cmap = plt.get_cmap()
-            #norm = matplotlib.colors.Normalize(0, 2)
-            #norm = matplotlib.colors.Normalize(np.min(h0), np.max(h0))
+            h0, xedges, yedges = np.histogram2d(x, y, bins=bins, range=[x_range, fe_range ], density=True)
             h0[h0==0] = np.nan
-            #h0T = h0.T / h0.T
             h0T = h0.T
             im = axes.flat[i].imshow(np.flip(h0T, 0), extent=[x_range[0], x_range[1], fe_range[0], fe_range[1]], norm=matplotlib.colors.LogNorm())#, norm=norm, cmap=cmap)
             fig.colorbar(im, ax=axes.flat[i])
@@ -390,13 +321,14 @@ def Plot2DTest(ind, truths, errors, labels):
     # Hiding the axis ticks and tick labels of the bigger plot
     plt.tick_params(labelcolor="none", bottom=False, left=False)
     # Adding the x-axis and y-axis labels for the bigger plot
-    plt.xlabel(t_l[2], fontsize=14)
-    plt.ylabel(e_l[2], fontsize=14)
+    plt.xlabel(xlabels, fontsize=14)
+    plt.ylabel(ylabels, fontsize=14)
 
 
 @Master.timer
 def main():
     events = Master.Data(file)
+    events.ApplyBeamFilter() # apply beam filter if possible
     events_2 = CreateFilteredEvents(events, 2)
     
     valid = Master.Pi0MCMask(events, 3)
@@ -414,29 +346,29 @@ def main():
     events_merged_s_vector = mergeShower(events_3, matched, unmatched, 2, False)
     events_unmerged = events_3.Filter([matched])
 
-    q_2 = CalculateQuantities(events_2, names)
-    q = CalculateQuantities(events_unmerged, names)
-    q_a_vector = CalculateQuantities(events_merged_a_vector, names)
-    q_s_vector = CalculateQuantities(events_merged_s_vector, names)
-    q_a_scalar = CalculateQuantities(events_merged_a_scalar, names)
-    q_s_scalar = CalculateQuantities(events_merged_s_scalar, names)
+    q_2 = Master.CalculateQuantities(events_2, names)
+    q = Master.CalculateQuantities(events_unmerged, names)
+    q_a_vector = Master.CalculateQuantities(events_merged_a_vector, names)
+    q_s_vector = Master.CalculateQuantities(events_merged_s_vector, names)
+    q_a_scalar = Master.CalculateQuantities(events_merged_a_scalar, names)
+    q_s_scalar = Master.CalculateQuantities(events_merged_s_scalar, names)
 
-    f_l_vector = [f_l[0], f_l[1], "angular", "spatial"]
+    f_l_vector = [s_l[0], s_l[1], "angular", "spatial"]
     ts_vector = [q_2[0], q[0], q_a_vector[0], q_s_vector[0]]
     rs_vector = [q_2[1], q[1], q_a_vector[1], q_s_vector[1]]
     es_vector = [q_2[2], q[2], q_a_vector[2], q_s_vector[2]]
 
-    f_l_scalar = [f_l[0], f_l[1], "angular", "spatial"]
+    f_l_scalar = [s_l[0], s_l[1], "angular", "spatial"]
     ts_scalar = [q_2[0], q[0], q_a_scalar[0], q_s_scalar[0]]
     rs_scalar = [q_2[1], q[1], q_a_scalar[1], q_s_scalar[1]]
     es_scalar = [q_2[2], q[2], q_a_scalar[2], q_s_scalar[2]]
 
-    f_l_angle = [f_l[0], f_l[1], f_l[2], f_l[4]]
+    f_l_angle = [s_l[0], s_l[1], s_l[2], s_l[4]]
     ts_angle = [q_2[0], q[0], q_a_scalar[0], q_a_vector[0]]
     rs_angle = [q_2[1], q[1], q_a_scalar[1], q_a_vector[1]]
     es_angle = [q_2[2], q[2], q_a_scalar[2], q_a_vector[2]]
 
-    f_l_dist = [f_l[0], f_l[1], f_l[3], f_l[5]]
+    f_l_dist = [s_l[0], s_l[1], s_l[3], s_l[5]]
     ts_dist = [q_2[0], q[0], q_s_scalar[0], q_s_vector[0]]
     rs_dist = [q_2[1], q[1], q_s_scalar[1], q_s_vector[1]]
     es_dist = [q_2[2], q[2], q_s_scalar[2], q_s_vector[2]]
@@ -453,7 +385,7 @@ def main():
         print("running test code...")
         if save is True: os.makedirs(outDir + "2DTest/scalar/", exist_ok=True)
         for i in range(len(names)):
-            Plot2DTest(i, ts_dist, es_dist, f_l_scalar)
+            Plot2DTest(i, ts_dist, es_dist, f_l_scalar, t_l[i], e_l[i], 2, 2)
             if save is True: Plots.Save(names[i], outDir + "2DTest/scalar/")
 
 
@@ -463,17 +395,17 @@ if __name__ == "__main__":
     t_l = ["True invariant mass (GeV)", "True opening angle (rad)", "True leading shower energy (GeV)", "True subleading shower energy (GeV)", "True $\pi^{0}$ momentum (GeV)"]
     e_l = ["Invariant mass fractional error (GeV)", "Opening angle fractional error (rad)", "Leading shower energy fractional error (GeV)", "Subleading shower energy fractional error (GeV)", "$\pi^{0}$ momentum fractional error (GeV)"]
     r_l = ["Invariant mass (GeV)", "Opening angle (rad)", "Leading shower energy (GeV)", "Subleading shower energy (GeV)", "$\pi^{0}$ momentum (GeV)"]
-    f_l = ["2 showers", "3 showers, unmerged", "angular vector sum", "spatial vector sum", "angular scalar sum", "spatial scalar sum"]
+    s_l = ["2 showers", "3 showers, unmerged", "angular vector sum", "spatial vector sum", "angular scalar sum", "spatial scalar sum"]
     fe_range = [-1, 1]
 
     parser = argparse.ArgumentParser(description="Study em shower merging for pi0 decays")
     parser.add_argument("-f", "--file", dest="file", type=str, default="ROOTFiles/pi0_0p5GeV_100K_5_7_21.root", help="ROOT file to open.")
     parser.add_argument("-b", "--nbins", dest="bins", type=int, default=50, help="number of bins when plotting histograms")
-    parser.add_argument("-s", "--save", dest="save", type=bool, default=False, help="whether to save the plots")
+    parser.add_argument("-s", "--save", dest="save", action="store_true", help="whether to save the plots")
     parser.add_argument("-d", "--directory", dest="outDir", type=str, default="pi0_0p5GeV_100K/shower_merge/", help="directory to save plots")
     parser.add_argument("-a", "--analysis", dest="study", type=str, choices=["separation", "merge", "energy", "test"], default="merge", help="what plots we want to study")
-    args = parser.parse_args("-a separation".split()) #! to run in Jutpyter notebook
-    #args = parser.parse_args() #! run in command line
+    #args = parser.parse_args("-f ROOTFiles/pi0_multi_9_3_22.root -a merge".split()) #! to run in Jutpyter notebook
+    args = parser.parse_args() #! run in command line
 
     file = args.file
     bins = args.bins
