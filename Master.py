@@ -157,6 +157,22 @@ class Data:
             return filtered
 
 
+    def ApplyBeamFilter(self):
+        """ Applies a beam filter to the sample, which selects objects
+            in events which are the beam particle, or daughters of the beam.
+        """
+        if self.recoParticles.beam_number is None:
+            print("data doesn't contain beam number, can't apply filter.")
+            return
+        hasBeam = self.recoParticles.beam_number != -999 # check if event has a beam particle
+        beamParticle = self.recoParticles.number == self.recoParticles.beam_number # get beam particle
+        beamParticleDaughters = self.recoParticles.mother == self.recoParticles.beam_number # get daugter of beam particle
+        # combine masks
+        particle_mask = np.logical_or(beamParticle, beamParticleDaughters)
+        particle_mask = np.logical_and(particle_mask, hasBeam)
+        self.Filter([hasBeam, particle_mask], [hasBeam]) # filter data
+
+
 class TrueParticleData:
     def __init__(self, events : Data) -> None:
         self.events = events # parent of TrueParticles
@@ -253,7 +269,7 @@ class RecoParticleData:
             filtered.startPos = self.startPos
             filtered.energy = self.energy
             filtered.momentum = self.momentum
-            GenericFilter()
+            GenericFilter(filtered, filters)
             return filtered
 
     @timer
@@ -348,22 +364,13 @@ def Pi0MCMask(events : Data, daughters : int = None):
     return valid
 
 
-def BeamFilteringMask(events : Data):
-    hasBeam = events.recoParticles.beam_number != -999
-    beamParticle = events.recoParticles.number == events.recoParticles.beam_number
-    beamParticleDaughters = events.recoParticles.mother == events.recoParticles.beam_number
-    particle_mask = np.logical_or(beamParticle, beamParticleDaughters)
-    particle_mask = np.logical_and(particle_mask, hasBeam)
-    return particle_mask
-
 @timer
-def MCTruth(events : Data, sortEnergy : ak.Array):
+def MCTruth(events : Data):
     #? move functionality into trueParticleData class and have each value as an @property?
-    """Calculate true shower pair quantities.
+    """ Calculate true shower pair quantities.
 
     Args:
         events (Master.Event): events to process
-        sortEnergy (ak.Array): mask to sort shower pairs by true energy
 
     Returns:
         tuple of ak.Array: calculated quantities
@@ -371,6 +378,7 @@ def MCTruth(events : Data, sortEnergy : ak.Array):
     #* get the primary pi0
     mask_pi0 = np.logical_and(events.trueParticles.number == 1, events.trueParticles.pdg == 111)
     photons = events.trueParticles.truePhotonMask
+    sortEnergy = events.SortedTrueEnergyMask
 
     #* compute start momentum of dauhters
     p_daughter = events.trueParticles.momentum[photons]
@@ -392,17 +400,17 @@ def MCTruth(events : Data, sortEnergy : ak.Array):
     return inv_mass, angle, p_daughter_mag[:, 1:], p_daughter_mag[:, :-1], p_pi0
 
 @timer
-def RecoQuantities(events : Data, sortEnergy : ak.Array):
+def RecoQuantities(events : Data):
     #? move functionality into recoParticleData class and have each value as an @property?
-    """Calculate reconstructed shower pair quantities.
+    """ Calculate reconstructed shower pair quantities.
 
     Args:
         events(Master.Event): events to process
-        sortEnergy (ak.Array): mask to sort shower pairs by true energy
 
     Returns:
         tuple of ak.Array: calculated quantities + array which masks null shower pairs
     """
+    sortEnergy = events.SortedTrueEnergyMask
     sortedPairs = ak.unflatten(events.recoParticles.energy[sortEnergy], 1, 0)
     leading = sortedPairs[:, :, 1:]
     secondary = sortedPairs[:, :, :-1]
@@ -461,3 +469,36 @@ def FractionalError(reco : ak.Array, true : ak.Array, null : ak.Array):
     print(f"number of true pairs: {len(true)}")
     error = (reco / true) - 1
     return ak.to_numpy(ak.ravel(error)), ak.to_numpy(ak.ravel(reco)), ak.to_numpy(ak.ravel(true))
+
+@timer
+def CalculateQuantities(events : Data, names : str):
+    """Calcaulte reco/ true quantities of shower pairs, and format them for plotting
+
+    Args:
+        events (Master.Event): events to look at
+        names (str): quantity names
+
+    Returns:
+        tuple of np.arrays: quantities to plot
+    """
+    mct = MCTruth(events)
+    rmc = RecoQuantities(events)
+
+    # keep track of events with no shower pairs
+    null = ak.flatten(rmc[-1], -1)
+    null = ak.num(null, 1) > 0
+
+    error = []
+    reco = []
+    true = []
+    for i in range(len(names)):
+        print(names[i])
+        e, r, t = FractionalError(rmc[i], mct[i], null)
+        error.append(e)
+        reco.append(r)
+        true.append(t)
+
+    error = np.nan_to_num(error, nan=-999)
+    reco = np.nan_to_num(reco, nan=-999)
+    true = np.nan_to_num(true, nan=-999)
+    return true, reco, error
