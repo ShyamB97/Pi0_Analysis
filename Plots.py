@@ -15,13 +15,14 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 
-def Save(name : str = "plot"):
+def Save(name : str = "plot", directory : str = ""):
     """ Saves the last created plot to file. Run after one the functions below.
 
     Args:
         name (str, optional): Name of plot. Defaults to "plot".
+        directory (str, optional): directory to save plot in.
     """
-    plt.savefig(name + ".png")
+    plt.savefig(directory + name + ".png")
     plt.close()
 
 
