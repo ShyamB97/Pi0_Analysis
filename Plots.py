@@ -15,22 +15,18 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 
-def Save(name="plot", subDirectory="", reference_filename=""):
+def Save(name : str = "plot"):
+    """ Saves the last created plot to file. Run after one the functions below.
+
+    Args:
+        name (str, optional): Name of plot. Defaults to "plot".
     """
-    Saves the last created plot to file. Run after one the functions below
-    ----- Parameters -----
-    out                 : file path to save to
-    reference_filename  : global variable, is the file name prefix of the plots
-    ----------------------
-    """
-    out = subDirectory + name + reference_filename + ".png"
-    plt.savefig(out)
+    plt.savefig(name + ".png")
     plt.close()
 
 
-def Plot(x, y, xlabel="", ylabel="", title="", label="", marker="", newFigure=True):
-    """
-    Plot line graph.
+def Plot(x, y, xlabel : str = "", ylabel : str = "", title : str = "", label : str = "", marker : str = "", newFigure : bool = True):
+    """ Make scatter plot.
     """
     if newFigure is True: plt.figure()
     plt.plot(x, y, marker=marker, label=label)
@@ -41,13 +37,11 @@ def Plot(x, y, xlabel="", ylabel="", title="", label="", marker="", newFigure=Tr
     plt.tight_layout()
 
 
-def PlotHist(data, bins=100, xlabel="", title="", label="", alpha=1, histtype="bar", sf=2, density=False, newFigure=True):
-    """
-    Plot histogram of data and axes including bin width.
-    ----- Parameters -----
-    height      : bin height
-    edges       : right edge of the bins
-    ----------------------
+def PlotHist(data, bins = 100, xlabel : str = "", title : str = "", label : str = "", alpha : int = 1, histtype : str = "bar", sf : int = 2, density : bool = False, newFigure : bool = True):
+    """ Plot 1D histograms.
+
+    Returns:
+        np.arrays : bin heights and edges
     """
     if newFigure is True: plt.figure()
     height, edges, _ = plt.hist(data, bins, label=label, alpha=alpha, density=density, histtype=histtype)
@@ -64,9 +58,11 @@ def PlotHist(data, bins=100, xlabel="", title="", label="", alpha=1, histtype="b
     return height, edges
 
 
-def PlotHist2D(data_x, data_y, bins=100, x_range=[], y_range=[], xlabel="", ylabel="", title="", label="", newFigure=True):
-    """
-    Plots two datasets in a 2D histogram.
+def PlotHist2D(data_x, data_y, bins : int = 100, x_range : list = [], y_range : list = [], xlabel : str = "", ylabel : str = "", title : str = "", label : str = "", newFigure : bool = True):
+    """ Plot 2D histograms.
+
+    Returns:
+        np.arrays : bin heights and edges
     """
     if newFigure is True: plt.figure()
     # clamp data_x and data_y given the x range
@@ -97,57 +93,29 @@ def PlotHist2D(data_x, data_y, bins=100, x_range=[], y_range=[], xlabel="", ylab
     return height, [xedges, yedges]
 
 
-def PlotHistComparison(data_1, data_2, bins=100, xlabel="", title="", label_1="", label_2="", alpha=1, histtype="bar", sf=2, density=False, newFigure=True):
+def PlotHistComparison(datas, xRange=[], bins : int = 100, xlabel : str = "", title : str = "", labels : list = [], alpha : int = 1, histtype : str = "step", sf : int = 2, density : bool = True):
+    """ Plots multiple histograms on one plot
+
+    Args:
+        datas (any): list of data sets to plot
+        xRange (list, optional): plot range for all data. Defaults to [].
     """
-    Plot two histograms on the same axes, plots larger set first based on the provided bin numbers.
-    ----- Parameters -----
-    height_1    : bin height
-    height_2    : bin height
-    edges       : right edge of the bins
-    ----------------------
-    """
-
-    if newFigure is True: plt.figure()
-
-    c_1 = "C0"
-    c_2 = "C1"
-
-    range_1 = max(data_1) - min(data_1)
-    range_2 = max(data_2) - min(data_2)
-
-    # data_1 should be bigger than data_2 so histograms aren't cut off
-    if range_1 < range_2:
-       tmp = data_1
-       data_1 = data_2
-       data_2 = tmp
-       
-       tmp = label_1
-       label_1 = label_2
-       label_2 = tmp
-       
-       tmp = c_1
-       c_1 = c_2
-       c_2 = tmp
-
-    height_1, edges, _ = plt.hist(data_1, bins, label=label_1, alpha=alpha, histtype=histtype, density=density, color=c_1)
-    height_2, _, _ = plt.hist(data_2, edges, label=label_2, alpha=alpha, histtype=histtype, density=density, color=c_2)
-
-    binWidth = round((edges[-1] - edges[0]) / len(edges), sf)
-    if density == False:
-        yl = "Number of events (bin width=" + str(binWidth) + ")"
-    else:
-        yl = "Normalized number of events (bin width=" + str(binWidth) + ")"
-    plt.ylabel(yl)
-    plt.xlabel(xlabel)
-    plt.title(title)
-    plt.legend()
-    plt.tight_layout()
-    return height_1, height_2, edges
+    plt.figure()
+    for i in range(len(labels)):
+        data = datas[i]
+        if len(xRange) == 2:
+            data = data[data > xRange[0]]
+            data = data[data < xRange[1]]
+        else:
+            data = data[data > -900]
+        if i == 0:
+            _, edges = PlotHist(data, bins, xlabel, title, labels[i], alpha, histtype, sf, density, False)
+        else:
+            PlotHist(data, edges, xlabel, title, labels[i], alpha, histtype, sf, density, False)
 
 
 def UniqueData(data):
-    """
-    formats data to be plotted as a bar plot based on unique values and how often they occur.
+    """ Formats data to be plotted as a bar plot based on unique values and how often they occur.
     """
     unique, counts = np.unique(data, return_counts=True)
     counts = list(counts)
@@ -161,8 +129,7 @@ def UniqueData(data):
 
 
 def PlotBar(data, width=0.4, xlabel="", title="", label="", alpha=1, newFigure=True):
-    """
-    Will plot a bar graph or unique items in data.
+    """ Plot a bar graph or unique items in data.
     """
     if newFigure is True: plt.figure()
 
@@ -176,8 +143,7 @@ def PlotBar(data, width=0.4, xlabel="", title="", label="", alpha=1, newFigure=T
     return unique, counts
 
 def PlotBarComparision(data_1, data_2, width=0.4, xlabel="", title="", label_1="", label_2="", newFigure=True):
-    """
-    Plot two bar plots of the same data type side-by-side.
+    """ Plot two bar plots of the same data type side-by-side.
     """
     if newFigure is True: plt.figure()
     
@@ -197,12 +163,6 @@ def PlotBarComparision(data_1, data_2, width=0.4, xlabel="", title="", label_1="
         m = label_2
         label_2 = label_1
         label_1 = m
-
-    #for i in range(len(unique_2)):
-    #    if unique_2[i] not in unique_1:
-    #        unique_1.append(unique_2[i]) 
-
-    #unique_1.sort()
 
     missing = [i for i in unique_2 if i not in unique_1]
     loc = [unique_2.index(i) for i in missing]
@@ -230,14 +190,13 @@ def PlotBarComparision(data_1, data_2, width=0.4, xlabel="", title="", label_1="
 
 
 def BW(x, A, M, T):
-    """
-    Breit Wigner distribution.
-    ----- Parameters -----
-    x   : COM energy (data)
-    M   : particle mass
-    T   : decay width
-    A   : amplitude to scale PDF to data
-    ----------------------
+    """ Breit Wigner distribution.
+    
+    Args:
+        x : COM energy (data)
+        M : particle mass
+        T : decay width
+        A : amplitude to scale PDF to data
     """
     # see https://en.wikipedia.org/wiki/Relativistic_Breit%E2%80%93Wigner_distribution for its definition
     gamma = np.sqrt(M**2 * (M**2 + T**2))  # formula is complex, so split it into multiple terms
@@ -246,28 +205,24 @@ def BW(x, A, M, T):
 
 
 def Gaussian(x, A, mu, sigma):
-    """
-    Gaussain distribution (not normalised)
-    ----- Parameters -----
-    x       : sample data
-    A       : amplitude to scale
-    mu      : mean value
-    sigma   : standard deviation
-    ----------------------
+    """ Gaussain distribution (not normalised).
+    Args:
+        x : sample data
+        A : amplitude to scale
+        mu : mean value
+        sigma : standard deviation
     """
     return A * np.exp( -0.5 * ((x-mu) / sigma)**2 )
 
 
 def ChiSqrPDF(x, ndf):
-    """
-    Chi Squared PDF
-    ----- Parameters -----
-    x           : sample data
-    ndf         : degrees of freedom
-    scale       : pdf normalisation?
-    poly        : power term
-    exponent    : exponential term
-    ----------------------
+    """ Chi Squared PDF.
+    Args:
+        x : sample data
+        ndf : degrees of freedom
+        scale : pdf normalisation?
+        poly : power term
+        exponent : exponential term
     """
     scale = 1 /( np.power(2, ndf/2) * gamma(ndf/2) )
     poly = np.power(x, ndf - 2)
@@ -276,23 +231,21 @@ def ChiSqrPDF(x, ndf):
 
 
 def LeastSqrFit(data, nbins=25, function=Gaussian, pinit=None, xlabel="", sf=3, interpolation=500, capsize=1):
-    """
-    fit a function to binned data using the least squares method, implemented in Scipy.
-    Plots the fitted function and histogram with y error bars.
-    ----- Parameters -----
-    hist        : height of each histogram bin
-    bins        : data range of each bin
-    x           : ceneterd value of each bin
-    binWidth    : width of the bins
-    uncertainty : poisson uncertainty of each bin
-    scale       : normalisation of data for curve fitting
-    popt        : paramters of the fitting function which minimises the chi-qsr
-    cov         : covarianc matrix of least sqares fit
-    ndf         : number of degrees of freedom
-    chi_sqr     : chi squared
-    x_inter     : interplolated x values of the best fit curve to show the fit in a plot
-    y_inter     : interpolated y values
-    ----------------------
+    """ Fit a function to binned data using the least squares method, implemented in Scipy.
+        Plots the fitted function and histogram with y error bars.
+    Args:
+        hist : height of each histogram bin
+        bins : data range of each bin
+        x : ceneterd value of each bin
+        binWidth : width of the bins
+        uncertainty : poisson uncertainty of each bin
+        scale : normalisation of data for curve fitting
+        popt : paramters of the fitting function which minimises the chi-qsr
+        cov : covarianc matrix of least sqares fit
+        ndf : number of degrees of freedom
+        chi_sqr : chi squared
+        x_inter : interplolated x values of the best fit curve to show the fit in a plot
+        y_inter : interpolated y values
     """
     data = data[data != -999] # reject null data
     hist, bins = np.histogram(data, nbins) # bin data
