@@ -96,7 +96,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Study em shower merging for pi0 decays.")
     parser.add_argument("-f", "--file", dest="file", type=str, default="ROOTFiles/pi0_0p5GeV_100K_5_7_21.root", help="ROOT file to open.")
     parser.add_argument("-b", "--nbins", dest="bins", type=int, default=50, help="number of bins when plotting histograms.")
-    parser.add_argument("-s", "--save", dest="save", type=bool, default=False, help="whether to save the plots.")
+    parser.add_argument("-s", "--save", dest="save", action="store_true", help="whether to save the plots")
     parser.add_argument("-d", "--directory", dest="outDir", type=str, default="pi0_0p5GeV_100K/match_MC_compare/", help="directory to save plots.")
     #args = parser.parse_args("-f ROOTFiles/pi0_multi_9_3_22.root".split()) #! to run in Jutpyter notebook
     args = parser.parse_args() #! run in command line

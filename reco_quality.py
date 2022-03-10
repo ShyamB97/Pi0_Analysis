@@ -229,7 +229,6 @@ def main():
     true = np.nan_to_num(true, nan=-999)
 
     t_r = [[-998, max(true[0])], [-998, max(true[1])], [-998, max(true[2])], [-998, max(true[3])], [-998, max(true[4])]]
-    #e_r = [[-998, max(error[0])], [-998, max(error[1])], [-998, max(error[2])], [-998, max(error[3])], [-998, max(error[4])]]
     e_r = [[-1, 1]]*5 # plot bounds for fractional errors
 
     #* make plots
@@ -239,7 +238,7 @@ def main():
             Plots.PlotHist2D(true[i], error[j], bins, x_range=t_r[i], y_range=e_r[j], xlabel=t_l[i], ylabel=e_l[j])
             if save is True: Plots.Save( names[j]+"_"+names[i] , outDir + "2D/")
 
-    #PlotSingle(error, e_r, e_l, bins, outDir + "fractional_errors/", names, save)
+    PlotSingle(error, e_r, e_l, bins, outDir + "fractional_errors/", names, save)
     PlotReco(reco, nDaughters, r_l, names)
     PlotTruth(true, t_l, names)
 
@@ -253,7 +252,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Study em shower merging for pi0 decays.")
     parser.add_argument("-f", "--file", dest="file", type=str, default="ROOTFiles/pi0_0p5GeV_100K_5_7_21.root", help="ROOT file to open.")
     parser.add_argument("-b", "--nbins", dest="bins", type=int, default=50, help="number of bins when plotting histograms.")
-    parser.add_argument("-s", "--save", dest="save", type=bool, default=False, help="whether to save the plots.")
+    parser.add_argument("-s", "--save", dest="save", action="store_true", help="whether to save the plots")
     parser.add_argument("-d", "--directory", dest="outDir", type=str, default="pi0_0p5GeV_100K/match_MC/", help="directory to save plots.")
     #args = parser.parse_args("") #! to run in Jutpyter notebook
     args = parser.parse_args() #! run in command line
