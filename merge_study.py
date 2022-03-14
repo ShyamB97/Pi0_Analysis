@@ -247,7 +247,7 @@ def CreateFilteredEvents(events : Master.Data, nDaughters : int = None):
     return filtered.Filter(reco_filters, true_filters)
 
 
-def Plot1D(data : ak.Array, xlabels : list, subDir : str, labels : list, plot_range = []):
+def Plot1D(data : ak.Array, xlabels : list, subDir : str, plot_ranges = [[]]*5):
     """ 1D histograms of data for each sample
 
     Args:
@@ -257,9 +257,9 @@ def Plot1D(data : ak.Array, xlabels : list, subDir : str, labels : list, plot_ra
         plot_range (list, optional): range to plot. Defaults to [].
     """
     if save is True: os.makedirs(outDir + subDir, exist_ok=True)
-    for j in range(len(names)):
-        Plots.PlotHistComparison(data[:, j], plot_range, bins=bins, xlabel=xlabels[j], histtype="step", labels=labels, density=True)
-        if save is True: Plots.Save( names[j] , outDir + subDir)
+    for i in range(len(names)):
+        Plots.PlotHistComparison(data[:, i], plot_ranges[i], bins=bins, xlabel=xlabels[i], histtype="step", labels=s_l, density=True)
+        if save is True: Plots.Save( names[i] , outDir + subDir)
 
 
 def AnalyseQuantities(truths : np.array, recos : np.array, errors : np.array, labels : list, directory : str):
@@ -282,9 +282,9 @@ def AnalyseQuantities(truths : np.array, recos : np.array, errors : np.array, la
         for i in range(len(labels)):
             plt.subplot(2, 2, i+1)
             if i == 0:
-                _, edges = Plots.PlotHist2D(truths[i][j], errors[i][j], bins, y_range=fe_range, xlabel=t_l[j], ylabel=e_l[j], title=labels[i], newFigure=False)
+                _, edges = Plots.PlotHist2D(truths[i][j], errors[i][j], bins, y_range=fe_range[j], xlabel=t_l[j], ylabel=e_l[j], title=labels[i], newFigure=False)
             else:
-                Plots.PlotHist2D(truths[i][j], errors[i][j], edges, y_range=fe_range, xlabel=t_l[j], ylabel=e_l[j], title=labels[i], newFigure=False)
+                Plots.PlotHist2D(truths[i][j], errors[i][j], edges, y_range=fe_range[j], xlabel=t_l[j], ylabel=e_l[j], title=labels[i], newFigure=False)
         if save is True: Plots.Save( names[j] , directory + "2D/")
     plt.rcParams["figure.figsize"] = plt.rcParamsDefault["figure.figsize"]
 
@@ -301,16 +301,16 @@ def Plot2DTest(ind, truths, errors, labels, xlabels, ylabels, nrows, ncols, bins
         else:
             x_range = [min(x), max(x)]
         if i == 0:
-            h0, xedges, yedges = np.histogram2d(x, y, bins=bins, range=[x_range, fe_range ], density=True)
+            h0, xedges, yedges = np.histogram2d(x, y, bins=bins, range=[x_range, fe_range[ind] ], density=True)
             h0[h0==0] = np.nan
             h0T = h0.T
-            im = axes.flat[i].imshow(np.flip(h0T, 0), extent=[x_range[0], x_range[1], fe_range[0], fe_range[1]], norm=matplotlib.colors.LogNorm())#, norm=norm, cmap=cmap)
+            im = axes.flat[i].imshow(np.flip(h0T, 0), extent=[x_range[0], x_range[1], fe_range[ind][0], fe_range[ind][1]], norm=matplotlib.colors.LogNorm())#, norm=norm, cmap=cmap)
             fig.colorbar(im, ax=axes.flat[i])
         else:
-            h, _, _ = np.histogram2d(x, y, bins=[xedges, yedges], range=[x_range, fe_range], density=True)
+            h, _, _ = np.histogram2d(x, y, bins=[xedges, yedges], range=[x_range, fe_range[ind]], density=True)
             h = h / h0
             h[h==0] = np.nan
-            im = axes.flat[i].imshow(np.flip(h.T, 0), extent=[x_range[0], x_range[1], fe_range[0], fe_range[1]], norm=matplotlib.colors.LogNorm())#, norm=norm, cmap=cmap)
+            im = axes.flat[i].imshow(np.flip(h.T, 0), extent=[x_range[0], x_range[1], fe_range[ind][0], fe_range[ind][1]], norm=matplotlib.colors.LogNorm())#, norm=norm, cmap=cmap)
             fig.colorbar(im, ax=axes.flat[i])
         axes.flat[i].set_aspect("auto")
         axes.flat[i].set_title(labels[i])
@@ -393,10 +393,14 @@ if __name__ == "__main__":
 
     names = ["inv_mass", "angle", "lead_energy", "sub_energy", "pi0_mom"]
     t_l = ["True invariant mass (GeV)", "True opening angle (rad)", "True leading shower energy (GeV)", "True subleading shower energy (GeV)", "True $\pi^{0}$ momentum (GeV)"]
-    e_l = ["Invariant mass fractional error (GeV)", "Opening angle fractional error (rad)", "Leading shower energy fractional error (GeV)", "Subleading shower energy fractional error (GeV)", "$\pi^{0}$ momentum fractional error (GeV)"]
+    e_l = ["Invariant mass fractional error", "Opening angle fractional error", "Leading shower energy fractional error", "Subleading shower energy fractional error", "$\pi^{0}$ momentum fractional error"]
     r_l = ["Invariant mass (GeV)", "Opening angle (rad)", "Leading shower energy (GeV)", "Subleading shower energy (GeV)", "$\pi^{0}$ momentum (GeV)"]
     s_l = ["2 showers", "3 showers, unmerged", "angular vector sum", "spatial vector sum", "angular scalar sum", "spatial scalar sum"]
-    fe_range = [-1, 1]
+    fe_range = [[-10, 10]] * 5
+    r_range = [[]] * 5
+    r_range[0] = [0, 0.5]
+    t_range = [[]] * 5
+
 
     parser = argparse.ArgumentParser(description="Study em shower merging for pi0 decays")
     parser.add_argument("-f", "--file", dest="file", type=str, default="ROOTFiles/pi0_0p5GeV_100K_5_7_21.root", help="ROOT file to open.")

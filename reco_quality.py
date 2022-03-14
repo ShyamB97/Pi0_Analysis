@@ -246,7 +246,7 @@ def main():
 if __name__ == "__main__":
     names = ["inv_mass", "angle", "lead_energy", "sub_energy", "pi0_mom"]
     t_l = ["True invariant mass (GeV)", "True opening angle (rad)", "True leading shower energy (GeV)", "True secondary shower energy (GeV)", "True $\pi^{0}$ momentum (GeV)"]
-    e_l = ["Invariant mass fractional error (GeV)", "Opening angle fractional error (rad)", "Leading shower energy fractional error (GeV)", "Secondary shower energy fractional error (GeV)", "$\pi^{0}$ momentum fractional error (GeV)"]
+    e_l = ["Invariant mass fractional error", "Opening angle fractional error", "Leading shower energy fractional error", "Secondary shower energy fractional error", "$\pi^{0}$ momentum fractional error"]
     r_l = ["Invariant mass (GeV)", "Opening angle (rad)", "Leading shower energy (GeV)", "Subleading shower energy (GeV)", "$\pi^{0}$ momentum (GeV)"]
 
     parser = argparse.ArgumentParser(description="Study em shower merging for pi0 decays.")
