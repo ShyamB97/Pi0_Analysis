@@ -70,6 +70,8 @@ class Data:
         self.filename = _filename
         if self.filename != None:
             self.io = IO(self.filename)
+            self.eventNum = self.io.Get("EventID")
+            self.subRun = self.io.Get("SubRun")
             self.trueParticles = TrueParticleData(self)
             self.recoParticles = RecoParticleData(self)
 
@@ -150,10 +152,14 @@ class Data:
         if returnCopy is False:
             self.trueParticles.Filter(true_filters, returnCopy)
             self.recoParticles.Filter(reco_filters, returnCopy)
+            GenericFilter(self, reco_filters) #? should true_filters also be applied?
         else:
             filtered = Data()
+            filtered.eventNum = self.eventNum
+            filtered.subRun = self.subRun
             filtered.trueParticles = self.trueParticles.Filter(true_filters)
             filtered.recoParticles = self.recoParticles.Filter(reco_filters)
+            GenericFilter(filtered, reco_filters) #? should true_filters also be applied?
             return filtered
 
 
@@ -170,7 +176,7 @@ class Data:
         # combine masks
         particle_mask = np.logical_or(beamParticle, beamParticleDaughters)
         particle_mask = np.logical_and(particle_mask, hasBeam)
-        self.Filter([hasBeam, particle_mask], [hasBeam]) # filter data
+        self.Filter([hasBeam, particle_mask], [hasBeam], returnCopy=False) # filter data
 
 
 class TrueParticleData:
