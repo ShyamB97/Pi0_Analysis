@@ -82,7 +82,9 @@ def GetMCMatchingFilters(events : Master.Data, cut=0.25):
     unmatched_mask = np.logical_not(np.logical_or(t_0, t_1))
 
     # get events where both reco MC angles are less than 0.25 radians
-    selection = np.logical_and(angles[:, 0] < cut, angles[:, 1] < cut)
+    angles_0 = vector.angle(events.recoParticles.direction[matched_mask][:, 0], photon_dir[:, 0])
+    angles_1 = vector.angle(events.recoParticles.direction[matched_mask][:, 1], photon_dir[:, 1])
+    selection = np.logical_and(angles_0 < cut, angles_1 < cut)
 
     # check how many showers had the same reco match to both true particles
     same_match = matched_mask[:, 0][selection] == matched_mask[:, 1][selection]
@@ -125,7 +127,7 @@ def AnalyseMatching(events : Master.Data, nDaughters=None, cut : int = 0.25, tit
     return dists, angles, reco_mc_dist, reco_mc_angle, percentage
 
 
-def Plot1D(data : ak.Array, xlabels : list, subDir : str, plot_ranges = [[]]*5):
+def Plot1D(data : ak.Array, xlabels : list, subDir : str, plot_ranges = [[]]*5, legend_loc = ["upper right"]*5):
     """ 1D histograms of data for each sample
 
     Args:
@@ -137,6 +139,7 @@ def Plot1D(data : ak.Array, xlabels : list, subDir : str, plot_ranges = [[]]*5):
     if save is True: os.makedirs(outDir + subDir, exist_ok=True)
     for i in range(len(names)):
         Plots.PlotHistComparison(data[:, i], plot_ranges[i], bins=bins, xlabel=xlabels[i], histtype="step", labels=s_l, density=True)
+        plt.legend(loc=legend_loc[i])
         if save is True: Plots.Save( names[i] , outDir + subDir)
 
 
@@ -164,7 +167,7 @@ def main():
     rmds = []
 
     if ana == "matching":
-        saveDir = outDir+"macthing/"
+        saveDir = outDir+"matching/"
         if save is True: os.makedirs(saveDir, exist_ok=True)
         if binned_analysis is True:
             ranges = np.arange(0.5, 7.5, 0.5)
@@ -204,13 +207,13 @@ def main():
             d, a, rmd, rma, same_match = AnalyseMatching(events)
             print(f"percentage of events with photons matched to the same shower: {same_match:.3f}")
             Plots.PlotHistComparison([ak.ravel(a[:, 0]), ak.ravel(a[:, 1])], bins=bins, xlabel="Angular separation between closest shower and true photon (rad)", labels=["photon 1", "photon_2"])
-            if save is True: Plots.Save("angle_dist", outDir+"macthing/")
+            if save is True: Plots.Save("angle_dist", outDir+"matching/")
             Plots.PlotHistComparison([ak.ravel(d[:, 0]), ak.ravel(d[:, 1])], [0, 150], bins=bins, xlabel="Spatial separation between closest shower and true photon (cm)", labels=["photon 1", "photon_2"])
-            if save is True: Plots.Save("spatial_dist", outDir+"macthing/")
-            Plots.PlotHist(rma, bins, "angular separation between shower and photon (rad)")
-            if save is True: Plots.Save("reco_mc_angle", outDir+"macthing/")
-            Plots.PlotHist(rmd[rmd < 150], bins, "spatial separation between shower and photon (cm)")
-            if save is True: Plots.Save("reco_mc_dist", outDir+"macthing/")
+            if save is True: Plots.Save("spatial_dist", outDir+"matching/")
+            Plots.PlotHist(rma, bins, "angular separation between matched shower and photon (rad)")
+            if save is True: Plots.Save("reco_mc_angle", outDir+"matching/")
+            Plots.PlotHist(rmd[rmd < 150], bins, "spatial separation between matched shower and photon (cm)")
+            if save is True: Plots.Save("reco_mc_dist", outDir+"matching/")
         
 
     if ana == "quantity":
@@ -224,9 +227,9 @@ def main():
         ts = ak.Array(ts)
         rs = ak.Array(rs)
         es = ak.Array(es)
-        Plot1D(ts, t_l, "truth/", t_range)
-        Plot1D(rs, r_l, "reco/", r_range)
-        Plot1D(es, e_l, "fractional_error/", fe_range)
+        Plot1D(ts, t_l, "truth/", t_range, t_locs)
+        Plot1D(rs, r_l, "reco/", r_range, r_locs)
+        Plot1D(es, e_l, "fractional_error/", e_range, e_locs)
 
         if save is True: os.makedirs(outDir + "2D/", exist_ok=True)
         plt.rcParams["figure.figsize"] = (6.4*3,4.8*1)
@@ -235,23 +238,28 @@ def main():
             for i in range(len(filters)):
                 plt.subplot(1, 3, i+1)
                 if i == 0:
-                    _, edges = Plots.PlotHist2D(ts[i][j], es[i][j], bins, x_range=t_range[j], y_range=fe_range[j], xlabel=t_l[j], ylabel=e_l[j], title=s_l[i], newFigure=False)
+                    _, edges = Plots.PlotHist2D(ts[i][j], es[i][j], bins, x_range=t_range[j], y_range=e_range[j], xlabel=t_l[j], ylabel=e_l[j], title=s_l[i], newFigure=False)
                 else:
-                    Plots.PlotHist2D(ts[i][j], es[i][j], edges, x_range=t_range[j], y_range=fe_range[j], xlabel=t_l[j], ylabel=e_l[j], title=s_l[i], newFigure=False)
+                    Plots.PlotHist2D(ts[i][j], es[i][j], edges, x_range=t_range[j], y_range=e_range[j], xlabel=t_l[j], ylabel=e_l[j], title=s_l[i], newFigure=False)
             if save is True: Plots.Save( names[j] , outDir + "2D/")
         plt.rcParams["figure.figsize"] = plt.rcParamsDefault["figure.figsize"]
 
 
 if __name__ == "__main__":
     names = ["inv_mass", "angle", "lead_energy", "sub_energy", "pi0_mom"]
-    t_l = ["True invariant mass (GeV)", "True opening angle (rad)", "True leading shower energy (GeV)", "True secondary shower energy (GeV)", "True $\pi^{0}$ momentum (GeV)"]
-    e_l = ["Invariant mass fractional error", "Opening angle fractional error", "Leading shower energy fractional error", "Secondary shower energy fractional error", "$\pi^{0}$ momentum fractional error"]
+    # plot labels
+    t_l = ["True invariant mass (GeV)", "True opening angle (rad)", "True leading photon energy (GeV)", "True Sub leading photon energy (GeV)", "True $\pi^{0}$ momentum (GeV)"]
+    e_l = ["Invariant mass fractional error", "Opening angle fractional error", "Leading shower energy fractional error", "Sub leading shower energy fractional error", "$\pi^{0}$ momentum fractional error"]
     r_l = ["Invariant mass (GeV)", "Opening angle (rad)", "Leading shower energy (GeV)", "Subleading shower energy (GeV)", "$\pi^{0}$ momentum (GeV)"]
     # plot ranges, order is invariant mass, angle, lead energy, sub energy, pi0 momentum
-    fe_range = [[-10, 10]] * 5
+    e_range = [[-10, 10]] * 5
     r_range = [[]] * 5
     r_range[0] = [0, 0.5]
     t_range = [[]] * 5
+    # legend location, order is invariant mass, angle, lead energy, sub energy, pi0 momentum
+    r_locs = ["upper right", "upper right", "upper right", "upper right", "upper right"]
+    t_locs = ["upper left", "upper right", "upper right", "upper right", "upper right"]
+    e_locs = ["upper right", "upper right", "upper right", "upper right", "upper left"]
 
     filters = [2, 3, -3]
     s_l = ["2 daughters", "3 daughters", "> 3 daughters"]
@@ -263,7 +271,7 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--directory", dest="outDir", type=str, default="pi0_0p5GeV_100K/matching_study/", help="directory to save plots.")
     parser.add_argument("-a", "--analysis", dest="ana", type=str, choices=["matching", "quantity"], default="quantity", help="what analysis to run.")
     parser.add_argument("--binned", dest="binned_analysis", action="store_true", help="do analysis binned in true pi0 momentum.")
-    #args = parser.parse_args("-f ROOTFiles/pi0_multi_9_3_22.root".split()) #! to run in Jutpyter notebook
+    #args = parser.parse_args("-f ROOTFiles/pi0_multi_9_3_22.root -a quantity".split()) #! to run in Jutpyter notebook
     args = parser.parse_args() #! run in command line
 
     file = args.file

@@ -388,7 +388,6 @@ def Pi0MCMask(events : Data, daughters : int = None):
     valid = np.logical_and(valid, np.logical_not(null))
     return valid
 
-
 @timer
 def MCTruth(events : Data):
     #? move functionality into trueParticleData class and have each value as an @property?
