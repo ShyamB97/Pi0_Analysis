@@ -136,7 +136,26 @@ class Data:
             return matched_mask, unmatched_mask, selection, angles
         else:
             return matched_mask, unmatched_mask, selection
-    
+
+
+    def CreateSpecificEventFilter(self, eventNums : list):
+        """ Create boolean mask which selects specific events and subruns to look at.
+            example: if you want to look at subrun 1 events 5, 6, 8 then eventNums is
+            [(1, 5), (1, 6), (1, 8)]
+            or the first event of subruns 1, 40 and 268:
+            [(1, 1), (40, 1), (268, 1)]
+        Args:
+            eventNums (list): list of tuples of the form (subrun, eventNum)
+
+        Returns:
+            ak.Array: boolean mask of selected events
+        """
+        re = ak.concatenate( [ak.unflatten(self.subRun, 1), ak.unflatten(self.eventNum, 1)], 1)
+        f = np.logical_and(re[:, 0] == eventNums[0][0], re[:, 1] == eventNums[0][1])
+        for i in range(1, len(eventNums)):
+            f = np.logical_or(f, np.logical_and(re[:, 0] == eventNums[i][0], re[:, 1] == eventNums[i][1]))
+        return f
+
 
     def Filter(self, reco_filters : list = [], true_filters : list = [], returnCopy : bool = True):
         """ Filter events.
@@ -144,7 +163,7 @@ class Data:
         Args:
             reco_filters (list, optional): list of filters to apply to reconstructed data. Defaults to [].
             true_filters (list, optional): list of filters to apply to true data. Defaults to [].
-            returnCopy   (bool, optional): return a copy of filtered events, or change self
+            returnCopy   (bool, optional): if true return a copy of filtered events, else change self
 
         Returns:
             Event: filtered events
