@@ -271,7 +271,7 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--directory", dest="outDir", type=str, default="pi0_0p5GeV_100K/matching_study/", help="directory to save plots.")
     parser.add_argument("-a", "--analysis", dest="ana", type=str, choices=["matching", "quantity"], default="quantity", help="what analysis to run.")
     parser.add_argument("--binned", dest="binned_analysis", action="store_true", help="do analysis binned in true pi0 momentum.")
-    #args = parser.parse_args("-f ROOTFiles/pi0_multi_9_3_22.root -a quantity".split()) #! to run in Jutpyter notebook
+    #args = parser.parse_args("-f ROOTFiles/pi0_multi_9_3_22.root -a matching".split()) #! to run in Jutpyter notebook
     args = parser.parse_args() #! run in command line
 
     file = args.file
