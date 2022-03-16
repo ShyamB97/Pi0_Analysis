@@ -146,7 +146,7 @@ def SelectSample(events : Master.Data, nDaughters : int, merge : bool = False):
     """
     valid = Master.Pi0MCMask(events, nDaughters) # get mask of events
     filtered = events.Filter([valid], [valid]) # filter events with mask
-    matched, unmatched, selection, _, _, _ = matching_study.GetMCMatchingFilters(filtered) # do MC matching to get masks
+    matched, unmatched, selection = filtered.MCMatching(applyFilters=False)
     filtered.Filter([selection],[selection], returnCopy=False) # apply the selection
     if merge is True:
         filtered = merge_study.mergeShower(filtered, matched[selection], unmatched[selection], 1, False)

@@ -201,10 +201,7 @@ def main():
     print(f"Number of showers before filtering: {ak.num(events.recoParticles.direction, 0)}")
     events.Filter([valid], [valid], returnCopy=False)
     print(f"Number of showers after filtering: {ak.num(events.recoParticles.direction, 0)}")
-    showers, _, selection_mask = events.GetMCMatchingFilters()
-
-    events.Filter([showers, selection_mask], [selection_mask], returnCopy=False)
-
+    events.MCMatching()
     #* calculate quantities
     mct = MCTruth(events)
     rmc = RecoQauntities(events)

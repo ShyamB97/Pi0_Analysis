@@ -239,15 +239,11 @@ def CreateFilteredEvents(events : Master.Data, nDaughters : int = None):
     filtered = events.Filter([valid], [valid])
     print(f"Number of showers events: {ak.num(filtered.recoParticles.direction, 0)}")
 
-    showers, _, selection_mask = filtered.GetMCMatchingFilters()
-
-    reco_filters = [showers, selection_mask]
-    true_filters = [selection_mask]
-
-    return filtered.Filter(reco_filters, true_filters)
+    filtered.MCMatching()
+    return filtered
 
 
-def Plot1D(data : ak.Array, xlabels : list, subDir : str, plot_ranges = [[]]*5):
+def Plot1D(data : ak.Array, xlabels : list, subDir : str, labels : list = [""]*5, plot_ranges : list = [[]]*5):
     """ 1D histograms of data for each sample
 
     Args:
@@ -258,7 +254,7 @@ def Plot1D(data : ak.Array, xlabels : list, subDir : str, plot_ranges = [[]]*5):
     """
     if save is True: os.makedirs(outDir + subDir, exist_ok=True)
     for i in range(len(names)):
-        Plots.PlotHistComparison(data[:, i], plot_ranges[i], bins=bins, xlabel=xlabels[i], histtype="step", labels=s_l, density=True)
+        Plots.PlotHistComparison(data[:, i], plot_ranges[i], bins=bins, xlabel=xlabels[i], histtype="step", labels=labels, density=True)
         if save is True: Plots.Save( names[i] , outDir + subDir)
 
 
@@ -273,7 +269,7 @@ def AnalyseQuantities(truths : np.array, recos : np.array, errors : np.array, la
         directory (str): output directory
     """
     #! fix this
-    Plot1D(ak.Array(recos), r_l, "reco/", labels)
+    Plot1D(ak.Array(recos), r_l, "reco/", labels, r_range)
     Plot1D(ak.Array(errors), e_l, "fractional_error/", labels, fe_range)
     if save is True: os.makedirs(directory + "2D/", exist_ok=True)
     plt.rcParams["figure.figsize"] = (6.4*2,4.8*2)
@@ -333,7 +329,7 @@ def main():
     
     valid = Master.Pi0MCMask(events, 3)
     events_3 = events.Filter([valid], [valid])
-    matched, unmatched, selection_mask = events_3.GetMCMatchingFilters()
+    matched, unmatched, selection_mask = events_3.MCMatching(applyFilters=False)
     events_3 = events_3.Filter([selection_mask], [selection_mask]) # filter events based on MC matching
 
     # filter masks
