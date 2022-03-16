@@ -70,6 +70,8 @@ class Data:
         self.filename = _filename
         if self.filename != None:
             self.io = IO(self.filename)
+            self.eventNum = self.io.Get("EventID")
+            self.subRun = self.io.Get("SubRun")
             self.trueParticles = TrueParticleData(self)
             self.recoParticles = RecoParticleData(self)
 
@@ -88,53 +90,98 @@ class Data:
         return ak.argsort(self.trueParticles.energy[mask], ascending=True)
 
     @timer
-    def GetMCMatchingFilters(self, cut=0.25, returnAngles=False):
-        """ Matches Reconstructed showers to true photons and selected the best events
-            i.e. ones which have both errors of less than 0.25 radians. Only works for
-            events with two reconstructed showers and two true photons per event.
+    def MCMatching(self, cut=0.25, applyFilters : bool = True, returnCopy : bool = False):
+        """ function which matched reco showers to true photons for pi0 decays.
+            Does so by looking at angular separation, it will create masks which
+            can be applied to self to select matched showers, or return them. ALso
+            calculates mask of unmatched showers, needed for shower merging.
 
         Args:
-            photon_dir (ak.Record created by vector): direction of true photons
-            shower_dir (ak.Record created by vector): direction of reco showers
+            cut (float, optional): cut on angle for event selection. Defaults to 0.25.
+            applyFilters (bool, optional): if true applies matching filters to self, false returns the filters for the user to use. Defaults to True.
+            returnCopy (bool, optional): if true returns a filtered copy of the class, false applies to self. Defaults to False.
 
-        Returns:
-            ak.Array: shower indices in order of true photon number
-            ak.Array: boolean mask of showers not matched
-            ak.Array: mask which indicates which pi0 decays are "good"
-            ak.Array (optional): minimum angle between showers and each true photon
+        Returns (optional):
+            Data: filtered copy of self
+            ak.Array: mask which selects macthed showers
+            ak.Array: mask which selects unmacthed showers
+            ak.Array: mask which selects events that pass the selection
         """
         # angle of all reco showers wrt to each true photon per event i.e. error
         photon_dir = vector.normalize(self.trueParticles.momentum)[self.trueParticles.truePhotonMask]
-        angle_error_0 = vector.angle(self.recoParticles.direction, photon_dir[:, 0])
-        angle_error_1 = vector.angle(self.recoParticles.direction, photon_dir[:, 1])
+        angle_0 = vector.angle(self.recoParticles.direction, photon_dir[:, 0])
+        angle_1 = vector.angle(self.recoParticles.direction, photon_dir[:, 1])
+        ind = ak.sort(ak.argsort(angle_0, -1), -1) # create array of indices to keep track of shower index
 
         # get smallest angle wrt to each true photon
-        m_0 = ak.unflatten(ak.min(angle_error_0, -1), 1)
-        m_1 = ak.unflatten(ak.min(angle_error_1, -1), 1)
-        angles = ak.concatenate([m_0, m_1], -1)
+        m_0 = ak.unflatten(ak.min(angle_0, -1), 1)
+        m_1 = ak.unflatten(ak.min(angle_1, -1), 1)
 
-        # make boolean mask of showers that aren't matched
-        t_0 = ak.min(angle_error_0, -1) != angle_error_0
-        t_1 = ak.min(angle_error_1, -1) != angle_error_1
-        unmatched_mask = np.logical_and(t_0, t_1)
+        first_matched_photon = ak.argmin(ak.concatenate([m_0, m_1], -1), -1, keepdims=True) # get the first photon with the smallest angle
+        remaining_photon = ak.where(first_matched_photon == 0, 1, 0) # get the other photon which needs to be matched
+        
+        # get the index of the matched shower
+        m_0 = ind[m_0 == angle_0]
+        m_1 = ind[m_1 == angle_1]
+        first_matched_shower = ak.where(first_matched_photon == 0, m_0, m_1) # get index of the matched shower wrt to each photon
 
-        # get shower which had the smallest angle
-        m_0 = ak.unflatten(ak.argmin(angle_error_0, -1), 1)
-        m_1 = ak.unflatten(ak.argmin(angle_error_1, -1), 1)
-        matched_mask = ak.concatenate([m_0, m_1], -1)
+        # get angles of remaining showers to look at
+        remaining_showers_0 = ak.flatten(angle_0[first_matched_shower]) != angle_0
+        remaining_showers_1 = ak.flatten(angle_1[first_matched_shower]) != angle_1
+        new_angle_0 = angle_0[remaining_showers_0]
+        new_angle_1 = angle_1[remaining_showers_1]
 
-        # get events where both reco MC angles are less than 0.25 radians
-        selection = np.logical_and(angles[:, 0] < cut, angles[:, 1] < cut)
+        # get index of next closest shower
+        m_0 = ak.unflatten(ak.min(new_angle_0, -1), 1)
+        m_1 = ak.unflatten(ak.min(new_angle_1, -1), 1)
+        m_0 = ind[m_0 == angle_0]
+        m_1 = ind[m_1 == angle_1]
+        second_matched_shower = ak.where(remaining_photon == 0, m_0, m_1) # get index of the matched shower wrt to each photon
 
-        # check how many showers had the same reco match to both true particles
-        same_match = matched_mask[:, 0][selection] == matched_mask[:, 1][selection]
-        print(f"number of events where both photons match to the same shower: {ak.count(ak.mask(same_match, same_match))}")
+        # concantenate matched photons in each pass, then get the indices in which they should be sorted to preserve the order of photons in MC truth
+        photon_order = ak.argsort(ak.concatenate([first_matched_photon, remaining_photon], -1), -1)
+        # concantenate matched showers and then sort by photon number
+        matched_mask = ak.concatenate([first_matched_shower, second_matched_shower], -1)[photon_order]
 
-        if returnAngles is True:
-            return matched_mask, unmatched_mask, selection, angles
+        # get unmatched showers by checking which showers are matched
+        t_0 = matched_mask[:, 0] == ind
+        t_1 = matched_mask[:, 1] == ind
+        # use logical not to get the showers not in matched mask i.e. what is unmatched
+        unmatched_mask = np.logical_not(np.logical_or(t_0, t_1))
+
+        # get events where both reco MC angles are less than the threshold value
+        angle_0 = vector.angle(self.recoParticles.direction[matched_mask][:, 0], photon_dir[:, 0])
+        angle_1 = vector.angle(self.recoParticles.direction[matched_mask][:, 1], photon_dir[:, 1])
+        selection = np.logical_and(angle_0 < cut, angle_1 < cut)
+        
+        # either apply the filters or return them
+        if applyFilters is True:
+            if returnCopy is True:
+                return self.Filter([matched_mask, selection], [selection], returnCopy=True)
+            else:
+                self.Filter([matched_mask, selection], [selection], returnCopy=False)
         else:
             return matched_mask, unmatched_mask, selection
-    
+
+
+    def CreateSpecificEventFilter(self, eventNums : list):
+        """ Create boolean mask which selects specific events and subruns to look at.
+            example: if you want to look at subrun 1 events 5, 6, 8 then eventNums is
+            [(1, 5), (1, 6), (1, 8)]
+            or the first event of subruns 1, 40 and 268:
+            [(1, 1), (40, 1), (268, 1)]
+        Args:
+            eventNums (list): list of tuples of the form (subrun, eventNum)
+
+        Returns:
+            ak.Array: boolean mask of selected events
+        """
+        re = ak.concatenate( [ak.unflatten(self.subRun, 1), ak.unflatten(self.eventNum, 1)], 1)
+        f = np.logical_and(re[:, 0] == eventNums[0][0], re[:, 1] == eventNums[0][1])
+        for i in range(1, len(eventNums)):
+            f = np.logical_or(f, np.logical_and(re[:, 0] == eventNums[i][0], re[:, 1] == eventNums[i][1]))
+        return f
+
 
     def Filter(self, reco_filters : list = [], true_filters : list = [], returnCopy : bool = True):
         """ Filter events.
@@ -142,7 +189,7 @@ class Data:
         Args:
             reco_filters (list, optional): list of filters to apply to reconstructed data. Defaults to [].
             true_filters (list, optional): list of filters to apply to true data. Defaults to [].
-            returnCopy   (bool, optional): return a copy of filtered events, or change self
+            returnCopy   (bool, optional): if true return a copy of filtered events, else change self
 
         Returns:
             Event: filtered events
@@ -150,10 +197,14 @@ class Data:
         if returnCopy is False:
             self.trueParticles.Filter(true_filters, returnCopy)
             self.recoParticles.Filter(reco_filters, returnCopy)
+            GenericFilter(self, reco_filters) #? should true_filters also be applied?
         else:
             filtered = Data()
+            filtered.eventNum = self.eventNum
+            filtered.subRun = self.subRun
             filtered.trueParticles = self.trueParticles.Filter(true_filters)
             filtered.recoParticles = self.recoParticles.Filter(reco_filters)
+            GenericFilter(filtered, reco_filters) #? should true_filters also be applied?
             return filtered
 
 
@@ -170,7 +221,7 @@ class Data:
         # combine masks
         particle_mask = np.logical_or(beamParticle, beamParticleDaughters)
         particle_mask = np.logical_and(particle_mask, hasBeam)
-        self.Filter([hasBeam, particle_mask], [hasBeam]) # filter data
+        self.Filter([hasBeam, particle_mask], [hasBeam], returnCopy=False) # filter data
 
 
 class TrueParticleData:
@@ -362,7 +413,6 @@ def Pi0MCMask(events : Data, daughters : int = None):
 
     valid = np.logical_and(valid, np.logical_not(null))
     return valid
-
 
 @timer
 def MCTruth(events : Data):

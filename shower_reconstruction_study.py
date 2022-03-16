@@ -16,6 +16,7 @@ import numpy as np
 import Plots
 import Master
 import merge_study
+import matching_study
 
 def Plot2DRatio(ind : int, truths : np.array, errors : np.array, labels : str, xlabels : str, ylabels : str, nrows : int, ncols : int, bins : int = 25):
     """ Plot ratio of 2D histograms
@@ -35,6 +36,10 @@ def Plot2DRatio(ind : int, truths : np.array, errors : np.array, labels : str, x
     for i in range(len(names)):
         x = truths[i][ind]
         y = errors[i][ind]
+        if len(e_range[ind]) == 0:
+            y_range = [min(y), max(y)]
+        else:
+            y_range = e_range[ind]
 
         if len(np.unique(x)) == 1:
             x_range = [min(x)-0.01, max(x)+0.01] # do this to allow plots of data with single bins
@@ -42,16 +47,16 @@ def Plot2DRatio(ind : int, truths : np.array, errors : np.array, labels : str, x
             x_range = [min(x), max(x)]
         if i == 0:
             # first histogram is the denominator for other histograms
-            h0, xedges, yedges = np.histogram2d(x, y, bins=bins, range=[x_range, fe_range ], density=True)
+            h0, xedges, yedges = np.histogram2d(x, y, bins=bins, range=[x_range, y_range ], density=True)
             h0[h0==0] = np.nan
             h0T = h0.T # transpose cause numpy is wierd
-            im = axes.flat[i].imshow(np.flip(h0T, 0), extent=[x_range[0], x_range[1], fe_range[0], fe_range[1]], norm=matplotlib.colors.LogNorm())#, norm=norm, cmap=cmap)
+            im = axes.flat[i].imshow(np.flip(h0T, 0), extent=[x_range[0], x_range[1], y_range[0], y_range[1]], norm=matplotlib.colors.LogNorm())#, norm=norm, cmap=cmap)
             fig.colorbar(im, ax=axes.flat[i])
         else:
-            h, _, _ = np.histogram2d(x, y, bins=[xedges, yedges], range=[x_range, fe_range], density=True)
+            h, _, _ = np.histogram2d(x, y, bins=[xedges, yedges], range=[x_range, y_range], density=True)
             h = h / h0
             h[h==0] = np.nan
-            im = axes.flat[i].imshow(np.flip(h.T, 0), extent=[x_range[0], x_range[1], fe_range[0], fe_range[1]], norm=matplotlib.colors.LogNorm())#, norm=norm, cmap=cmap)
+            im = axes.flat[i].imshow(np.flip(h.T, 0), extent=[x_range[0], x_range[1], y_range[0], y_range[1]], norm=matplotlib.colors.LogNorm())#, norm=norm, cmap=cmap)
             fig.colorbar(im, ax=axes.flat[i])
         axes.flat[i].set_aspect("auto")
         axes.flat[i].set_title(labels[i])
@@ -66,7 +71,7 @@ def Plot2DRatio(ind : int, truths : np.array, errors : np.array, labels : str, x
     plt.ylabel(ylabels, labelpad=15, fontsize=14)
 
 
-def Plot2DMulti(x : ak.Array, y : ak.Array, xlabel : str, ylabel : str, name : str):
+def Plot2DMulti(x : ak.Array, y : ak.Array, xlabel : str, ylabel : str, name : str, x_range : list = [], y_range : list = []):
     """ Plot generic 2D histograms
 
     Args:
@@ -75,20 +80,22 @@ def Plot2DMulti(x : ak.Array, y : ak.Array, xlabel : str, ylabel : str, name : s
         xlabel (str): x label
         ylabel (str): y label
         name (str): name of image to save
+        x_range (list) : plot range on x axis
+        y_range (list) : plot range on y axis
     """
     plt.rcParams["figure.figsize"] = (6.4*2,4.8*3)
     plt.figure()
     for i in range(len(s_l)):
         plt.subplot(3, 2, i+1)
         if i == 0:
-            _, edges = Plots.PlotHist2D(x[i], y[i], bins, y_range=fe_range, xlabel=xlabel, ylabel=ylabel, title=s_l[i], newFigure=False)
+            _, edges = Plots.PlotHist2D(x[i], y[i], bins, x_range, y_range, xlabel, ylabel, title=s_l[i], newFigure=False)
         else:
-            Plots.PlotHist2D(x[i], y[i], edges, y_range=fe_range, xlabel=xlabel, ylabel=ylabel, title=s_l[i], newFigure=False)
+            Plots.PlotHist2D(x[i], y[i], edges, x_range, y_range, xlabel, ylabel, title=s_l[i], newFigure=False)
     if save is True: Plots.Save( name , outDir + "2D/")
     plt.rcParams["figure.figsize"] = plt.rcParamsDefault["figure.figsize"]
 
 
-def Plot1D(data : ak.Array, xlabels : list, subDir : str, plot_range = []):
+def Plot1D(data : ak.Array, xlabels : list, subDir : str, plot_ranges = [[]]*5, legend_loc = ["upper right"]*5):
     """ 1D histograms of data for each sample
 
     Args:
@@ -98,9 +105,10 @@ def Plot1D(data : ak.Array, xlabels : list, subDir : str, plot_range = []):
         plot_range (list, optional): range to plot. Defaults to [].
     """
     if save is True: os.makedirs(outDir + subDir, exist_ok=True)
-    for j in range(len(names)):
-        Plots.PlotHistComparison(data[:, j], plot_range, bins=bins, xlabel=xlabels[j], histtype="step", labels=s_l, density=True)
-        if save is True: Plots.Save( names[j] , outDir + subDir)
+    for i in range(len(names)):
+        Plots.PlotHistComparison(data[:, i], plot_ranges[i], bins=bins, xlabel=xlabels[i], histtype="step", labels=s_l, density=True)
+        plt.legend(loc=legend_loc[i])
+        if save is True: Plots.Save( names[i] , outDir + subDir)
 
 
 def Plot2D(true_data : np.array, error_data : np.array):
@@ -120,8 +128,8 @@ def Plot2D(true_data : np.array, error_data : np.array):
     # plot opening angle and invariant mass against pi0 momentum
     t_awk = ak.Array(true_data)
     e_awk = ak.Array(error_data)
-    Plot2DMulti(t_awk[:, 4], e_awk[:, 0], t_l[4], e_l[0], name="inv_mass_vs_mom")
-    Plot2DMulti(t_awk[:, 4], e_awk[:, 1], t_l[4], e_l[1], name="angle_vs_mom")
+    Plot2DMulti(t_awk[:, 4], e_awk[:, 0], t_l[4], e_l[0], "inv_mass_vs_mom", t_range[4], e_range[0])
+    Plot2DMulti(t_awk[:, 4], e_awk[:, 1], t_l[4], e_l[1], "angle_vs_mom", t_range[4], e_range[0])
 
 
 def SelectSample(events : Master.Data, nDaughters : int, merge : bool = False):
@@ -138,7 +146,7 @@ def SelectSample(events : Master.Data, nDaughters : int, merge : bool = False):
     """
     valid = Master.Pi0MCMask(events, nDaughters) # get mask of events
     filtered = events.Filter([valid], [valid]) # filter events with mask
-    matched, unmatched, selection = filtered.GetMCMatchingFilters() # do MC matching to get masks
+    matched, unmatched, selection = filtered.MCMatching(applyFilters=False)
     filtered.Filter([selection],[selection], returnCopy=False) # apply the selection
     if merge is True:
         filtered = merge_study.mergeShower(filtered, matched[selection], unmatched[selection], 1, False)
@@ -147,14 +155,13 @@ def SelectSample(events : Master.Data, nDaughters : int, merge : bool = False):
         filtered.Filter([matched[selection]], returnCopy=False)
     return filtered
 
-
+@Master.timer
 def main():
     events = Master.Data(file)
     events.ApplyBeamFilter() # apply beam filter if possible
     if save is True: os.makedirs(outDir, exist_ok=True)
     Plots.PlotHist(ak.count(events.recoParticles.nHits, -1), bins, "Number of particle flow objects per event")
     if save is True: Plots.Save("n_objects")
-
     events_2_shower = SelectSample(events, 2, False)
     events_3_shower = SelectSample(events, 3, False)
     events_remaning = SelectSample(events, -3, False)
@@ -172,19 +179,29 @@ def main():
     t = ak.Array(t)
     r = ak.Array(r)
     e = ak.Array(e)
-    if plotsToMake in ["all", "truth"]: Plot1D(t, t_l, "truth/")
-    if plotsToMake in ["all", "reco"]: Plot1D(r, r_l, "reco/")
-    if plotsToMake in ["all", "error"]: Plot1D(e, e_l, "error/", fe_range)
+    if plotsToMake in ["all", "truth"]: Plot1D(t, t_l, "truth/", t_range, t_locs)
+    if plotsToMake in ["all", "reco"]: Plot1D(r, r_l, "reco/", r_range, r_locs)
+    if plotsToMake in ["all", "error"]: Plot1D(e, e_l, "error/", e_range, e_locs)
     if plotsToMake in ["all", "2D"]: Plot2D(t, e)
 
 if __name__ == "__main__":
-
     names = ["inv_mass", "angle", "lead_energy", "sub_energy", "pi0_mom"]
-    t_l = ["True invariant mass (GeV)", "True opening angle (rad)", "True leading shower energy (GeV)", "True subleading shower energy (GeV)", "True $\pi^{0}$ momentum (GeV)"]
-    e_l = ["Invariant mass fractional error (GeV)", "Opening angle fractional error (rad)", "Leading shower energy fractional error (GeV)", "Subleading shower energy fractional error (GeV)", "$\pi^{0}$ momentum fractional error (GeV)"]
-    r_l = ["Invariant mass (GeV)", "Opening angle (rad)", "Leading shower energy (GeV)", "Subleading shower energy (GeV)", "$\pi^{0}$ momentum (GeV)"]
+    # plot labels
+    t_l = ["True invariant mass (GeV)", "True opening angle (rad)", "True leading photon energy (GeV)", "True Sub leading photon energy (GeV)", "True $\pi^{0}$ momentum (GeV)"]
+    e_l = ["Invariant mass fractional error", "Opening angle fractional error", "Leading shower energy fractional error", "Sub leading shower energy fractional error", "$\pi^{0}$ momentum fractional error"]
+    r_l = ["Invariant mass (GeV)", "Opening angle (rad)", "Leading shower energy (GeV)", "Sub leading shower energy (GeV)", "$\pi^{0}$ momentum (GeV)"]
+    # plot ranges, order is invariant mass, angle, lead energy, sub energy, pi0 momentum
+    #e_range = [[]] * 5
+    e_range = [[-1, 1], [-1, 1], [-1, 1], [-1, 1], [-1, 0]] * 5
+    r_range = [[]] * 5
+    r_range[0] = [0, 0.5]
+    t_range = [[]] * 5
+    # legend location, order is invariant mass, angle, lead energy, sub energy, pi0 momentum
+    r_locs = ["upper right", "upper right", "upper right", "upper right", "upper right"]
+    t_locs = ["upper left", "upper right", "upper right", "upper right", "upper right"]
+    e_locs = ["upper right", "upper left", "upper right", "upper right", "upper left"]
+
     s_l = ["2 showers", "3 showers unmerged", ">3 showers unmerged", "3 showers merged", ">3 showers merged"]
-    fe_range = [-1, 1]
 
     parser = argparse.ArgumentParser(description="Study em shower merging for pi0 decays")
     parser.add_argument("-f", "--file", dest="file", type=str, default="", help="ROOT file to open.")
@@ -192,7 +209,7 @@ if __name__ == "__main__":
     parser.add_argument("-s", "--save", dest="save", action="store_true", help="whether to save the plots")
     parser.add_argument("-d", "--directory", dest="outDir", type=str, default="pi0_0p5GeV_100K/shower_merge/", help="directory to save plots")
     parser.add_argument("-p", "--plots", dest="plotsToMake", type=str, choices=["all", "truth", "reco", "error", "2D"], default="all", help="what plots we want to make")
-    #args = parser.parse_args("-f ROOTFiles/pi0_0p5GeV_100K_5_7_21.root".split()) #! to run in Jutpyter notebook
+    #args = parser.parse_args("-f ROOTFiles/pi0_multi_9_3_22.root".split()) #! to run in Jutpyter notebook
     args = parser.parse_args() #! run in command line
 
     file = args.file
