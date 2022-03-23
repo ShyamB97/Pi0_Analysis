@@ -17,6 +17,27 @@ import Plots
 import Master
 import vector
 
+def Separation(shower : ak.Record, photon : ak.Record, null_shower_dir : ak.Record, typeof : str):
+    """ Calculate angular or spatial separation,
+        accounting for null direction vectors.
+
+    Args:
+        shower (ak.Record): shower direction/position
+        photon (ak.Record): photon direction/position
+        typeof (str): "Angular" or "Spatial"
+
+    Returns:
+        ak.Array: separation
+    """
+    if typeof == "Angular":
+        s = vector.angle(shower, photon)
+    if typeof == "Spatial":
+        s = vector.dist(shower, photon)
+    # if direction is null, set separation to masssive value i.e. it is never matched
+    # otherwise assign the separation
+    return ak.where(null_shower_dir == True, 1E8, s)
+
+
 @Master.timer
 def GetMCMatchingFilters(events : Master.Data, cut=0.25):
     """ Matches Reconstructed showers to true photons and selected the best events
@@ -34,16 +55,17 @@ def GetMCMatchingFilters(events : Master.Data, cut=0.25):
         ak.Array: minimum angle between showers and each true photon
         ak.Array: minimum distance between showers and each true photon
     """
+    null_shower_dir = events.recoParticles.direction.x == -999 # keep track of showers which don't have a valid direction vector
     # angle of all reco showers wrt to each true photon per event i.e. error
     photon_dir = vector.normalize(events.trueParticles.momentum)[events.trueParticles.truePhotonMask]
-    angle_error_0 = vector.angle(events.recoParticles.direction, photon_dir[:, 0])
-    angle_error_1 = vector.angle(events.recoParticles.direction, photon_dir[:, 1])
+    angle_error_0 = Separation(events.recoParticles.direction, photon_dir[:, 0], null_shower_dir, "Angular")
+    angle_error_1 = Separation(events.recoParticles.direction, photon_dir[:, 1], null_shower_dir, "Angular")
     ind = ak.sort(ak.argsort(angle_error_0, -1), -1) # create array of indices to keep track of showers
 
     # get smallest spatial separation wrt to each true photon
     photon_pos = events.trueParticles.endPos[events.trueParticles.truePhotonMask]
-    dist_error_0 = vector.dist(events.recoParticles.startPos, photon_pos[:, 0])
-    dist_error_1 = vector.dist(events.recoParticles.startPos, photon_pos[:, 1])
+    dist_error_0 = Separation(events.recoParticles.startPos, photon_pos[:, 0], null_shower_dir, "Spatial")
+    dist_error_1 = Separation(events.recoParticles.startPos, photon_pos[:, 1], null_shower_dir, "Spatial")
     m_0 = ak.unflatten(ak.min(dist_error_0, -1), 1)
     m_1 = ak.unflatten(ak.min(dist_error_1, -1), 1)
     dists = ak.concatenate([m_0, m_1], -1)
@@ -92,8 +114,33 @@ def GetMCMatchingFilters(events : Master.Data, cut=0.25):
     print(f"number of events after selection: {ak.count(same_match)}")
     print(f"number of events where both photons match to the same shower: {ak.count(same_match[same_match])}")
     print(f"percantage of events where both photons match to the same shower: {same_match_percentage:.3f}")
-    
+
     return matched_mask, unmatched_mask, selection, angles, dists, same_match_percentage
+
+def SpatialStudy(events : Master.Data):
+    valid = Master.Pi0MCMask(events, None)
+
+    filtered = events.Filter([valid], [valid])
+    null_shower_dir = filtered.recoParticles.direction.x == -999
+    photon_pos = filtered.trueParticles.endPos[filtered.trueParticles.truePhotonMask]
+    dist_error_0 = Separation(filtered.recoParticles.startPos, photon_pos[:, 0], null_shower_dir, "Spatial")
+    dist_error_1 = Separation(filtered.recoParticles.startPos, photon_pos[:, 1], null_shower_dir, "Spatial")
+    m_0 = ak.unflatten(ak.argmin(dist_error_0, -1), 1)
+    m_1 = ak.unflatten(ak.argmin(dist_error_1, -1), 1)
+    closest = ak.concatenate([m_0, m_1], -1)
+    closest_start_pos = filtered.recoParticles.startPos[closest]
+    d_x_0 = closest_start_pos.x[:, 0] - photon_pos.x[:, 0]
+    d_x_1 = closest_start_pos.x[:, 1] - photon_pos.x[:, 1]
+    d_y_0 = closest_start_pos.y[:, 0] - photon_pos.y[:, 0]
+    d_y_1 = closest_start_pos.y[:, 1] - photon_pos.y[:, 1]
+    d_z_0 = closest_start_pos.z[:, 0] - photon_pos.z[:, 0]
+    d_z_1 = closest_start_pos.z[:, 1] - photon_pos.z[:, 1]
+    Plots.PlotHistComparison([d_x_0, d_x_1], [-50, 50], bins=bins, xlabel="x separation of closest reco shower and true photon (cm)", labels=["photon 0", "photon 1"])
+    if save is True: Plots.Save(outDir+"separation_x")
+    Plots.PlotHistComparison([d_y_0, d_y_1], [-50, 50], bins=bins, xlabel="y separation of closest reco shower and true photon (cm)", labels=["photon 0", "photon 1"])
+    if save is True: Plots.Save(outDir+"separation_y")
+    Plots.PlotHistComparison([d_z_0, d_z_1], [-75, 75], bins=bins, xlabel="z separation of closest reco shower and true photon (cm)", labels=["photon 0", "photon 1"])
+    if save is True: Plots.Save(outDir+"separation_z")
 
 
 def CreateFilteredEvents(events : Master.Data, nDaughters=None, cut : int = 0.25):
@@ -124,6 +171,7 @@ def AnalyseMatching(events : Master.Data, nDaughters=None, cut : int = 0.25, tit
 
     reco_mc_dist = ak.ravel(vector.dist(filtered.recoParticles.startPos, filtered.trueParticles.endPos[filtered.trueParticles.truePhotonMask]))
     reco_mc_angle = ak.ravel(vector.angle(filtered.recoParticles.direction, filtered.trueParticles.direction[filtered.trueParticles.truePhotonMask]))
+    
     return dists, angles, reco_mc_dist, reco_mc_angle, percentage
 
 
@@ -204,6 +252,7 @@ def main():
             Plots.PlotHistComparison(rmds, [0, 150], bins, "spatial separation between shower and matched photon (cm)", labels=x)
             if save is True: Plots.Save("reco_mc_dist", saveDir+"binned/")
         else:
+            SpatialStudy(events)
             d, a, rmd, rma, same_match = AnalyseMatching(events)
             print(f"percentage of events with photons matched to the same shower: {same_match:.3f}")
             Plots.PlotHistComparison([ak.ravel(a[:, 0]), ak.ravel(a[:, 1])], bins=bins, xlabel="Angular separation between closest shower and true photon (rad)", labels=["photon 1", "photon_2"])
@@ -264,14 +313,14 @@ if __name__ == "__main__":
     filters = [2, 3, -3]
     s_l = ["2 daughters", "3 daughters", "> 3 daughters"]
 
-    parser = argparse.ArgumentParser(description="Study em shower merging for pi0 decays.")
-    parser.add_argument("-f", "--file", dest="file", type=str, default="ROOTFiles/pi0_0p5GeV_100K_5_7_21.root", help="ROOT file to open.")
+    parser = argparse.ArgumentParser(description="Study shower-photon matching for pi0 decays.")
+    parser.add_argument(dest="file", type=str, help="ROOT file to open.")
     parser.add_argument("-b", "--nbins", dest="bins", type=int, default=50, help="number of bins when plotting histograms.")
     parser.add_argument("-s", "--save", dest="save", action="store_true", help="whether to save the plots")
     parser.add_argument("-d", "--directory", dest="outDir", type=str, default="pi0_0p5GeV_100K/matching_study/", help="directory to save plots.")
     parser.add_argument("-a", "--analysis", dest="ana", type=str, choices=["matching", "quantity"], default="quantity", help="what analysis to run.")
     parser.add_argument("--binned", dest="binned_analysis", action="store_true", help="do analysis binned in true pi0 momentum.")
-    #args = parser.parse_args("-f ROOTFiles/pi0_multi_9_3_22.root -a matching".split()) #! to run in Jutpyter notebook
+    #args = parser.parse_args("ROOTFiles/pi0_multi_9_3_22.root -a matching".split()) #! to run in Jutpyter notebook
     args = parser.parse_args() #! run in command line
 
     file = args.file
