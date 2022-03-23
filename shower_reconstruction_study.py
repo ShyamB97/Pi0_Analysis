@@ -95,7 +95,7 @@ def Plot2DMulti(x : ak.Array, y : ak.Array, xlabel : str, ylabel : str, name : s
     plt.rcParams["figure.figsize"] = plt.rcParamsDefault["figure.figsize"]
 
 
-def Plot1D(data : ak.Array, xlabels : list, subDir : str, plot_ranges = [[]]*5, legend_loc = ["upper right"]*5):
+def Plot1D(data : ak.Array, xlabels : list, subDir : str, labels : list, plot_ranges = [[]]*5, legend_loc = ["upper right"]*5, x_scale=["linear"]*5, y_scale=["linear"]*5):
     """ 1D histograms of data for each sample
 
     Args:
@@ -106,7 +106,7 @@ def Plot1D(data : ak.Array, xlabels : list, subDir : str, plot_ranges = [[]]*5, 
     """
     if save is True: os.makedirs(outDir + subDir, exist_ok=True)
     for i in range(len(names)):
-        Plots.PlotHistComparison(data[:, i], plot_ranges[i], bins=bins, xlabel=xlabels[i], histtype="step", labels=s_l, density=True)
+        Plots.PlotHistComparison(data[:, i], plot_ranges[i], bins, xlabel=xlabels[i], histtype="step", labels=labels, x_scale=x_scale[i], y_scale=y_scale[i], density=True)
         plt.legend(loc=legend_loc[i])
         if save is True: Plots.Save( names[i] , outDir + subDir)
 
@@ -159,15 +159,18 @@ def SelectSample(events : Master.Data, nDaughters : int, merge : bool = False):
 def main():
     events = Master.Data(file)
     events.ApplyBeamFilter() # apply beam filter if possible
+    
     if save is True: os.makedirs(outDir, exist_ok=True)
     Plots.PlotHist(ak.count(events.recoParticles.nHits, -1), bins, "Number of particle flow objects per event")
-    if save is True: Plots.Save("n_objects")
+    if save is True: Plots.Save(outDir + "n_objects")
+    
     events_2_shower = SelectSample(events, 2, False)
     events_3_shower = SelectSample(events, 3, False)
     events_remaning = SelectSample(events, -3, False)
     events_3_shower_merged = SelectSample(events, 3, True)
     events_remaning_merged = SelectSample(events, -3, True)
     samples = [events_2_shower, events_3_shower, events_remaning, events_3_shower_merged, events_remaning_merged]
+    
     t = []
     r = []
     e = []
@@ -176,12 +179,14 @@ def main():
         t.append(q[0])
         r.append(q[1])
         e.append(q[2])
+    
     t = ak.Array(t)
     r = ak.Array(r)
     e = ak.Array(e)
-    if plotsToMake in ["all", "truth"]: Plot1D(t, t_l, "truth/", t_range, t_locs)
-    if plotsToMake in ["all", "reco"]: Plot1D(r, r_l, "reco/", r_range, r_locs)
-    if plotsToMake in ["all", "error"]: Plot1D(e, e_l, "error/", e_range, e_locs)
+    
+    if plotsToMake in ["all", "truth"]: Plot1D(t[0:3], t_l, "truth/", s_l[0:3], t_range, t_locs) # MC truth for unmerged and merged are identical, so don't plot them
+    if plotsToMake in ["all", "reco"]: Plot1D(r, r_l, "reco/", s_l, r_range, r_locs, r_xs, r_ys)
+    if plotsToMake in ["all", "error"]: Plot1D(e, e_l, "error/", s_l, e_range, e_locs)
     if plotsToMake in ["all", "2D"]: Plot2D(t, e)
 
 if __name__ == "__main__":
@@ -191,7 +196,7 @@ if __name__ == "__main__":
     e_l = ["Invariant mass fractional error", "Opening angle fractional error", "Leading shower energy fractional error", "Sub leading shower energy fractional error", "$\pi^{0}$ momentum fractional error"]
     r_l = ["Invariant mass (GeV)", "Opening angle (rad)", "Leading shower energy (GeV)", "Sub leading shower energy (GeV)", "$\pi^{0}$ momentum (GeV)"]
     # plot ranges, order is invariant mass, angle, lead energy, sub energy, pi0 momentum
-    #e_range = [[]] * 5
+    #e_range = [[], [], [-10, 10], [-10, 10], [-10, 0]]
     e_range = [[-1, 1], [-1, 1], [-1, 1], [-1, 1], [-1, 0]] * 5
     r_range = [[]] * 5
     r_range[0] = [0, 0.5]
@@ -201,15 +206,18 @@ if __name__ == "__main__":
     t_locs = ["upper left", "upper right", "upper right", "upper right", "upper right"]
     e_locs = ["upper right", "upper left", "upper right", "upper right", "upper left"]
 
+    r_ys = ["linear", "linear", "log", "log", "linear"] #? something like this?
+    r_xs = ["linear", "linear", "linear", "linear", "linear"] #? something like this?
+
     s_l = ["2 showers", "3 showers unmerged", ">3 showers unmerged", "3 showers merged", ">3 showers merged"]
 
-    parser = argparse.ArgumentParser(description="Study em shower merging for pi0 decays")
-    parser.add_argument("-f", "--file", dest="file", type=str, default="", help="ROOT file to open.")
+    parser = argparse.ArgumentParser(description="Plot quantities to study shower reconstruction")
+    parser.add_argument(dest="file", type=str, help="ROOT file to open.")
     parser.add_argument("-b", "--nbins", dest="bins", type=int, default=50, help="number of bins when plotting histograms")
     parser.add_argument("-s", "--save", dest="save", action="store_true", help="whether to save the plots")
     parser.add_argument("-d", "--directory", dest="outDir", type=str, default="pi0_0p5GeV_100K/shower_merge/", help="directory to save plots")
     parser.add_argument("-p", "--plots", dest="plotsToMake", type=str, choices=["all", "truth", "reco", "error", "2D"], default="all", help="what plots we want to make")
-    #args = parser.parse_args("-f ROOTFiles/pi0_multi_9_3_22.root".split()) #! to run in Jutpyter notebook
+    #args = parser.parse_args("ROOTFiles/pi0_0p5GeV_100K_5_7_21.root -b 20".split()) #! to run in Jutpyter notebook
     args = parser.parse_args() #! run in command line
 
     file = args.file

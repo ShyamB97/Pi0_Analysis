@@ -19,8 +19,29 @@ import Plots
 import Master
 import vector
 
+def Separation(shower_1 : ak.Record, shower_2 : ak.Record, null : ak.Record, typeof : str):
+    """ Calculate angular or spatial separation, acocunting for null values
+
+    Args:
+        shower_1 (ak.Record): first shower
+        shower_2 (ak.Record): second shower
+        null (ak.Record): boolean mask of null vectors
+        typeof (str): "Angular" or "Spatial"
+
+    Returns:
+        _type_: _description_
+    """
+    if typeof == "Angular":
+        s = vector.angle(shower_1, shower_2)
+    if typeof == "Spatial":
+        s = vector.dist(shower_1, shower_2)
+    # if direction is null, set separation to masssive value i.e. it is never matched
+    # otherwise assign the separation
+    return ak.where(null == True, 1E8, s)
+
+
 def AnalyzeReco(events : Master.Data, matched : ak.Array, unmatched : ak.Array):
-    """Study relationships between angles and distances between matched and unmatched showers.
+    """ Study relationships between angles and distances between matched and unmatched showers.
 
     Args:
         events (Master.Event): events to study
@@ -29,16 +50,22 @@ def AnalyzeReco(events : Master.Data, matched : ak.Array, unmatched : ak.Array):
     """
     matched_reco = events.Filter([matched]).recoParticles # filter reco for matched/unmatched only
     unmatched_reco = events.Filter([unmatched]).recoParticles
+    null_dir = unmatched_reco.direction.x == -999 # should only be needed for unmatched sample
+    valid = np.logical_not(null_dir)
 
     #* calculate separation of matched to unmatched
-    separation_0 = vector.dist(unmatched_reco.startPos, matched_reco.startPos[:, 0])
-    separation_1 = vector.dist(unmatched_reco.startPos, matched_reco.startPos[:, 1])
+    #separation_0 = vector.dist(unmatched_reco.startPos, matched_reco.startPos[:, 0])
+    #separation_1 = vector.dist(unmatched_reco.startPos, matched_reco.startPos[:, 1])
+    separation_0 = Separation(unmatched_reco.startPos, matched_reco.startPos[:, 0], null_dir, "Spatial")[valid]
+    separation_1 = Separation(unmatched_reco.startPos, matched_reco.startPos[:, 1], null_dir, "Spatial")[valid]
     separation = ak.concatenate([separation_0, separation_1], -1)
     minMask_dist = ak.min(separation, -1) == separation # get closest matched shower to matched to study various combinations
 
     #* same as above but for angular distance
-    angle_0 = vector.angle(unmatched_reco.direction, matched_reco.direction[:, 0])
-    angle_1 = vector.angle(unmatched_reco.direction, matched_reco.direction[:, 1])
+    #angle_0 = vector.angle(unmatched_reco.direction, matched_reco.direction[:, 0])
+    #angle_1 = vector.angle(unmatched_reco.direction, matched_reco.direction[:, 1])
+    angle_0 = Separation(unmatched_reco.direction, matched_reco.direction[:, 0], null_dir, "Angular")[valid]
+    angle_1 = Separation(unmatched_reco.direction, matched_reco.direction[:, 1], null_dir, "Angular")[valid]
     angle = ak.concatenate([angle_0, angle_1], -1)
     minMask_angle = ak.min(angle, -1) == angle
 
@@ -64,10 +91,10 @@ def AnalyzeReco(events : Master.Data, matched : ak.Array, unmatched : ak.Array):
     directory = outDir + "merging/"
     if save is True: os.makedirs(directory, exist_ok=True)
     
-    Plots.PlotHistComparison(separation_0, separation_1[separation_1 < 300], bins, xlabel="Spatial separation between matched showers and shower 2 (cm)", label_1="shower 0", label_2="shower 1", histtype="step")
-    if save is True: Plots.Save( "spatial" , directory)
-    Plots.PlotHistComparison(angle_0, angle_1, bins, xlabel="Angular separation between matched showers and shower 2 (rad)", label_1="shower 0", label_2="shower 1", histtype="step")
-    if save is True: Plots.Save( "angular" , directory)
+    Plots.PlotHistComparison([separation_0, separation_1[separation_1 < 300]], bins=bins, xlabel="Spatial separation between matched showers and shower 2 (cm)", labels=["shower 0", "shower 1"])
+    if save is True: Plots.Save("spatial", directory)
+    Plots.PlotHistComparison([angle_0, angle_1], bins=bins, xlabel="Angular separation between matched showers and shower 2 (rad)", labels=["shower 0", "shower 1"])
+    if save is True: Plots.Save("angular", directory)
     
     plt.rcParams["figure.figsize"] = (6.4*2,4.8)
     plt.figure()
@@ -83,9 +110,9 @@ def AnalyzeReco(events : Master.Data, matched : ak.Array, unmatched : ak.Array):
     merge_dist_l = "merge by distance"
     merge_angle_l = "merge by angle"
 
-    Plots.PlotHistComparison(min_separation_by_dist, min_separation_by_angle, bins, xlabel=min_spatial_l, label_1=merge_dist_l, label_2=merge_angle_l, histtype="step")
+    Plots.PlotHistComparison([min_separation_by_dist, min_separation_by_angle], bins=bins, xlabel=min_spatial_l, labels=[merge_dist_l, merge_angle_l])
     if save is True: Plots.Save("min_spatial" , directory)
-    Plots.PlotHistComparison(min_angle_by_dist, min_angle_by_angle, bins, xlabel=min_angular_l, label_1=merge_dist_l, label_2=merge_angle_l, histtype="step")
+    Plots.PlotHistComparison([min_angle_by_dist, min_angle_by_angle], bins=bins, xlabel=min_angular_l, labels=[merge_dist_l, merge_angle_l])
     if save is True: Plots.Save("min_angle" , directory)
 
     plt.rcParams["figure.figsize"] = (6.4*2,4.8)
@@ -99,7 +126,7 @@ def AnalyzeReco(events : Master.Data, matched : ak.Array, unmatched : ak.Array):
 
 
 def AnalyzeTruth(events : Master.Data):
-    """Plot distances of true particles wrt to eachother + the decay vertex to gauge size of pi0 decays
+    """ Plot distances of true particles wrt to eachother + the decay vertex to gauge size of pi0 decays
 
     Args:
         events (Master.Events): events to look at
@@ -126,7 +153,7 @@ def AnalyzeTruth(events : Master.Data):
 
 
 def MakePlots(dist : ak.Array, angle : ak.Array, dist_label : str, angle_label : str, subdirectory : str, title : str = None):
-    """Make plots of distance, angle and distance vs angle.
+    """ Make plots of distance, angle and distance vs angle.
 
     Args:
         dist (ak.Array): distance between two showers
@@ -187,19 +214,24 @@ def mergeShower(events : Master.Data, matched : ak.Array, unmatched : ak.Array, 
     """
     events_matched = events.Filter([matched])
     unmatched_reco = events.Filter([unmatched]).recoParticles # filter reco for matched/unmatched only
+    null_dir = unmatched_reco.direction.x == -999 # should only be needed for unmatched sample
 
     if mergeMethod == 2:
         #* distance from each matched to unmatched
-        separation_0 = vector.dist(unmatched_reco.startPos, events_matched.recoParticles.startPos[:, 0])
-        separation_1 = vector.dist(unmatched_reco.startPos, events_matched.recoParticles.startPos[:, 1])
+        #separation_0 = vector.dist(unmatched_reco.startPos, events_matched.recoParticles.startPos[:, 0])
+        #separation_1 = vector.dist(unmatched_reco.startPos, events_matched.recoParticles.startPos[:, 1])
+        separation_0 = Separation(unmatched_reco.startPos, events_matched.recoParticles.startPos[:, 0], null_dir, "Spatial")
+        separation_1 = Separation(unmatched_reco.startPos, events_matched.recoParticles.startPos[:, 1], null_dir, "Spatial")
         separation_0 = ak.unflatten(separation_0, 1, -1)
         separation_1 = ak.unflatten(separation_1, 1, -1)
         separation = ak.concatenate([separation_0, separation_1], -1)
         mergeMask = ak.min(separation, -1) == separation # get boolean mask to which matched shower to merge to
 
     if mergeMethod == 1:
-        angle_0 = vector.angle(unmatched_reco.direction, events_matched.recoParticles.direction[:, 0])
-        angle_1 = vector.angle(unmatched_reco.direction, events_matched.recoParticles.direction[:, 1])        
+        #angle_0 = vector.angle(unmatched_reco.direction, events_matched.recoParticles.direction[:, 0])
+        #angle_1 = vector.angle(unmatched_reco.direction, events_matched.recoParticles.direction[:, 1])        
+        angle_0 = Separation(unmatched_reco.direction, events_matched.recoParticles.direction[:, 0], null_dir, "Angular")
+        angle_1 = Separation(unmatched_reco.direction, events_matched.recoParticles.direction[:, 1], null_dir, "Angular")
         angle_0 = ak.unflatten(angle_0, 1, -1)
         angle_1 = ak.unflatten(angle_1, 1, -1)
         angle = ak.concatenate([angle_0, angle_1], -1)
@@ -377,13 +409,6 @@ def main():
     if study == "separation":
         AnalyzeReco(events_3, matched, unmatched)
         AnalyzeTruth(events_3)
-    if study == "test":
-        print("running test code...")
-        if save is True: os.makedirs(outDir + "2DTest/scalar/", exist_ok=True)
-        for i in range(len(names)):
-            Plot2DTest(i, ts_dist, es_dist, f_l_scalar, t_l[i], e_l[i], 2, 2)
-            if save is True: Plots.Save(names[i], outDir + "2DTest/scalar/")
-
 
 if __name__ == "__main__":
 
@@ -399,11 +424,11 @@ if __name__ == "__main__":
 
 
     parser = argparse.ArgumentParser(description="Study em shower merging for pi0 decays")
-    parser.add_argument("-f", "--file", dest="file", type=str, default="ROOTFiles/pi0_0p5GeV_100K_5_7_21.root", help="ROOT file to open.")
+    parser.add_argument(dest="file", type=str, help="ROOT file to open.")
     parser.add_argument("-b", "--nbins", dest="bins", type=int, default=50, help="number of bins when plotting histograms")
     parser.add_argument("-s", "--save", dest="save", action="store_true", help="whether to save the plots")
     parser.add_argument("-d", "--directory", dest="outDir", type=str, default="pi0_0p5GeV_100K/shower_merge/", help="directory to save plots")
-    parser.add_argument("-a", "--analysis", dest="study", type=str, choices=["separation", "merge", "energy", "test"], default="merge", help="what plots we want to study")
+    parser.add_argument("-a", "--analysis", dest="study", type=str, choices=["separation", "merge", "energy"], default="merge", help="what plots we want to study")
     #args = parser.parse_args("-f ROOTFiles/pi0_multi_9_3_22.root -a merge".split()) #! to run in Jutpyter notebook
     args = parser.parse_args() #! run in command line
 
