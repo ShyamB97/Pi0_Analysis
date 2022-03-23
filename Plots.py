@@ -38,7 +38,7 @@ def Plot(x, y, xlabel : str = "", ylabel : str = "", title : str = "", label : s
     plt.tight_layout()
 
 
-def PlotHist(data, bins = 100, xlabel : str = "", title : str = "", label : str = "", alpha : int = 1, histtype : str = "bar", sf : int = 2, density : bool = False, newFigure : bool = True):
+def PlotHist(data, bins = 100, xlabel : str = "", title : str = "", label : str = "", alpha : int = 1, histtype : str = "bar", sf : int = 2, density : bool = False, x_scale : str = "linear", y_scale : str = "linear", newFigure : bool = True):
     """ Plot 1D histograms.
 
     Returns:
@@ -53,13 +53,15 @@ def PlotHist(data, bins = 100, xlabel : str = "", title : str = "", label : str 
         yl = "Normalized number of events (bin width=" + str(binWidth) + ")"
     plt.ylabel(yl)
     plt.xlabel(xlabel)
+    plt.xscale(x_scale)
+    plt.yscale(y_scale)
     plt.title(title)
     if label != "": plt.legend()
     plt.tight_layout()
     return height, edges
 
 
-def PlotHist2D(data_x, data_y, bins : int = 100, x_range : list = [], y_range : list = [], xlabel : str = "", ylabel : str = "", title : str = "", label : str = "", newFigure : bool = True):
+def PlotHist2D(data_x, data_y, bins : int = 100, x_range : list = [], y_range : list = [], xlabel : str = "", ylabel : str = "", title : str = "", label : str = "", x_scale : str = "linear", y_scale : str = "linear", newFigure : bool = True):
     """ Plot 2D histograms.
 
     Returns:
@@ -88,13 +90,15 @@ def PlotHist2D(data_x, data_y, bins : int = 100, x_range : list = [], y_range : 
 
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
+    plt.xscale(x_scale)
+    plt.yscale(y_scale)
     plt.title(title)
     if label != "": plt.legend()
     plt.tight_layout()
     return height, [xedges, yedges]
 
 
-def PlotHistComparison(datas, xRange=[], bins : int = 100, xlabel : str = "", title : str = "", labels : list = [], alpha : int = 1, histtype : str = "step", sf : int = 2, density : bool = True):
+def PlotHistComparison(datas, xRange=[], bins : int = 100, xlabel : str = "", title : str = "", labels : list = [], alpha : int = 1, histtype : str = "step", x_scale : str = "linear", y_scale : str = "linear", sf : int = 2, density : bool = True):
     """ Plots multiple histograms on one plot
 
     Args:
@@ -110,9 +114,11 @@ def PlotHistComparison(datas, xRange=[], bins : int = 100, xlabel : str = "", ti
         else:
             data = data[data > -900]
         if i == 0:
-            _, edges = PlotHist(data, bins, xlabel, title, labels[i], alpha, histtype, sf, density, False)
+            _, edges = PlotHist(data, bins, xlabel, title, labels[i], alpha, histtype, sf, density, newFigure=False)
         else:
-            PlotHist(data, edges, xlabel, title, labels[i], alpha, histtype, sf, density, False)
+            PlotHist(data, edges, xlabel, title, labels[i], alpha, histtype, sf, density, newFigure=False)
+    plt.xscale(x_scale)
+    plt.yscale(y_scale)
 
 
 def UniqueData(data):

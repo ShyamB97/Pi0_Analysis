@@ -108,9 +108,12 @@ class Data:
             ak.Array: mask which selects events that pass the selection
         """
         # angle of all reco showers wrt to each true photon per event i.e. error
+        null_shower_dir = self.recoParticles.direction.x == -999
         photon_dir = vector.normalize(self.trueParticles.momentum)[self.trueParticles.truePhotonMask]
         angle_0 = vector.angle(self.recoParticles.direction, photon_dir[:, 0])
+        angle_0 = ak.where(null_shower_dir == True, 1E8, angle_0)
         angle_1 = vector.angle(self.recoParticles.direction, photon_dir[:, 1])
+        angle_1 = ak.where(null_shower_dir == True, 1E8, angle_1)
         ind = ak.sort(ak.argsort(angle_0, -1), -1) # create array of indices to keep track of shower index
 
         # get smallest angle wrt to each true photon
@@ -220,8 +223,7 @@ class Data:
         beamParticleDaughters = self.recoParticles.mother == self.recoParticles.beam_number # get daugter of beam particle
         # combine masks
         particle_mask = np.logical_or(beamParticle, beamParticleDaughters)
-        particle_mask = np.logical_and(particle_mask, hasBeam)
-        self.Filter([hasBeam, particle_mask], [hasBeam], returnCopy=False) # filter data
+        self.Filter([hasBeam, particle_mask[hasBeam]], [hasBeam], returnCopy=False) # filter data
 
 
 class TrueParticleData:
@@ -263,14 +265,8 @@ class TrueParticleData:
             GenericFilter(self, filters)
         else:
             filtered = TrueParticleData(Data())
-            filtered.number = self.number
-            filtered.mother = self.mother
-            filtered.pdg = self.pdg
-            filtered.energy = self.energy
-            filtered.momentum = self.momentum
-            filtered.direction = self.direction
-            filtered.startPos = self.startPos
-            filtered.endPos = self.endPos
+            for var in vars(self):
+                setattr(filtered, var, getattr(self, var))
             GenericFilter(filtered, filters)
             return filtered
 
@@ -292,6 +288,8 @@ class RecoParticleData:
                                     "z" : self.events.io.Get("reco_daughter_allShower_startZ")})
             self.energy = self.events.io.Get("reco_daughter_allShower_energy")
             self.momentum = self.GetMomentum()
+            self.showerLength = self.events.io.Get("reco_daughter_allShower_length")
+            self.showerConeAngle = self.events.io.Get("reco_daughter_allShower_coneAngle")
 
 
     def GetMomentum(self):
@@ -315,11 +313,8 @@ class RecoParticleData:
             GenericFilter(self, filters)
         else:
             filtered = RecoParticleData(Data())
-            filtered.nHits = self.nHits
-            filtered.direction = self.direction
-            filtered.startPos = self.startPos
-            filtered.energy = self.energy
-            filtered.momentum = self.momentum
+            for var in vars(self):
+                setattr(filtered, var, getattr(self, var))
             GenericFilter(filtered, filters)
             return filtered
 
@@ -384,9 +379,8 @@ class RecoParticleData:
 
 def Pi0MCMask(events : Data, daughters : int = None):
     #?do filtering within function i.e. return object of type Data or mutate events argument?
-    """A filter for Pi0 MC dataset, selects events with a specific number of daughters
-       and masks events where the direction has a null value -999. also returns indices
-       of true photons to use when matching MC to reco.
+    """ A filter for Pi0 MC dataset, selects events with a specific number of daughters
+        which have a valid direction vector and removes events with the 3 body pi0 decay.
 
     Args:
         events (Event): events being studied
@@ -396,8 +390,9 @@ def Pi0MCMask(events : Data, daughters : int = None):
         ak.Array: mask of events to filter
         ak.Array: mask of true photons to apply to true data
     """
-    nDaughter = ak.count(events.recoParticles.nHits, 1)
-    
+    nDaughter = events.recoParticles.direction.x != -999
+    nDaughter = ak.num(nDaughter[nDaughter]) # get number of showers which have a valid direction
+
     if daughters == None:
         r_mask = nDaughter > 1
     elif daughters < 0:
@@ -406,12 +401,9 @@ def Pi0MCMask(events : Data, daughters : int = None):
         r_mask = nDaughter == daughters
     
     t_mask = ak.num(events.trueParticles.truePhotonMask[events.trueParticles.truePhotonMask], -1) == 2 # exclude pi0 -> e+ + e- + photons
+    print(f"number of dalitz decays: {ak.count(t_mask[np.logical_not(t_mask)])}")
 
     valid = np.logical_and(r_mask, t_mask) # events which have 2 reco daughters and correct pi0 decay
-
-    null = ak.any(events.recoParticles.direction.x == -999, 1) # exclude events where direction couldn't be calculated
-
-    valid = np.logical_and(valid, np.logical_not(null))
     return valid
 
 @timer
