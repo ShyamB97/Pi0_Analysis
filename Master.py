@@ -244,11 +244,41 @@ class TrueParticleData:
             self.endPos = ak.zip({"x" : self.events.io.Get("g4_endX"),
                                   "y" : self.events.io.Get("g4_endY"),
                                   "z" : self.events.io.Get("g4_endZ")})
+            self.pi0_MC = ak.any(np.logical_and(self.number == 1, self.pdg == 111)) # check if we are looking at pure pi0 MC or beam MC
+
+    @property
+    def PrimaryPi0Mask(self):
+        if self.pi0_MC:
+            return np.logical_and(self.number == 1, self.pdg == 111)
+        else:
+            # assume we have beam MC
+            # get pi0s produced from beam interaction
+            return np.logical_and(self.mother == 1, self.pdg == 111)
 
     @property
     def truePhotonMask(self):
-        photons = self.mother == 1 # get only primary daughters
-        photons = np.logical_and(photons, self.pdg == 22)
+        if self.pi0_MC:
+            photons = self.mother == 1 # get only primary daughters
+            photons = np.logical_and(photons, self.pdg == 22)
+        else:
+            # assume we have beam MC, with potentially more than 1 pi0
+            primary_pi0 = self.PrimaryPi0Mask
+            primary_pi0_num = self.number[primary_pi0] # get particle number of each pi0
+            n = ak.max(ak.num(primary_pi0_num)) # get the largest number of primary pi0s per event
+            primary_pi0_num = ak.pad_none(primary_pi0_num, n) # pad empty elements with None so we can do index slicing
+            
+            #* loop through slices of pi0s per event, and get all particles which are their daughters
+            null = self.number == -1 # never should be negative so all values are false
+            primary_daughters = self.mother == primary_pi0_num[:, 0]
+            primary_daughters = ak.where(ak.is_none(primary_daughters), null, primary_daughters) # check none since boolean logic ignores None values
+            
+            i = 1
+            while i < n:
+                next_primaries = self.mother == primary_pi0_num[:, i]
+                next_primaries = ak.where(ak.is_none(next_primaries), null, next_primaries)
+                primary_daughters = np.logical_or(primary_daughters, next_primaries)
+                i += 1
+            photons = np.logical_and(primary_daughters, self.pdg == 22) # only want photons
         return photons
 
 
